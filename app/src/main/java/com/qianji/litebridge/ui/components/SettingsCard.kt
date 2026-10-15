@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Save
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.qianji.litebridge.ui.theme.PrimaryBlue
+import com.qianji.litebridge.ui.theme.SuccessGreen
 import com.qianji.litebridge.util.PreferencesManager
 
 @Composable
@@ -61,6 +63,20 @@ fun SettingsCard(
     var geminiModel by remember { mutableStateOf(prefs.geminiModel) }
 
     var isApiKeyVisible by remember { mutableStateOf(false) }
+    var showAutoSavedHint by remember { mutableStateOf(false) }
+
+    fun saveAll(showToast: Boolean = false) {
+        prefs.geminiApiKey = apiKey
+        prefs.geminiModel = geminiModel
+        prefs.categories = categories
+        prefs.accounts = accounts
+        prefs.defaultBook = defaultBook
+        prefs.apiToken = apiToken
+        showAutoSavedHint = true
+        if (showToast) {
+            Toast.makeText(context, "配置已成功保存", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -98,11 +114,29 @@ fun SettingsCard(
                     )
                 }
 
-                Icon(
-                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (isExpanded) "折叠" else "展开",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (showAutoSavedHint) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "已自动保存",
+                            tint = SuccessGreen,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "已自动保存",
+                            fontSize = 11.sp,
+                            color = SuccessGreen
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (isExpanded) "折叠" else "展开",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             // 可折叠内容区
@@ -112,11 +146,14 @@ fun SettingsCard(
                         .fillMaxWidth()
                         .padding(top = 16.dp)
                 ) {
-                    // Gemini API Key
+                    // Gemini API Key (输入即刻实时自动保存)
                     OutlinedTextField(
                         value = apiKey,
-                        onValueChange = { apiKey = it },
-                        label = { Text("Gemini API Key") },
+                        onValueChange = {
+                            apiKey = it
+                            saveAll(showToast = false)
+                        },
+                        label = { Text("Gemini API Key (实时自动保存)") },
                         placeholder = { Text("AIzaSy...") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -136,7 +173,10 @@ fun SettingsCard(
                     // Gemini Model
                     OutlinedTextField(
                         value = geminiModel,
-                        onValueChange = { geminiModel = it },
+                        onValueChange = {
+                            geminiModel = it
+                            saveAll(showToast = false)
+                        },
                         label = { Text("Gemini 模型名称") },
                         placeholder = { Text("gemini-3.5-flash-lite") },
                         modifier = Modifier.fillMaxWidth(),
@@ -148,11 +188,14 @@ fun SettingsCard(
                     // 分类列表
                     OutlinedTextField(
                         value = categories,
-                        onValueChange = { categories = it },
+                        onValueChange = {
+                            categories = it
+                            saveAll(showToast = false)
+                        },
                         label = { Text("分类枚举列表 (支持换行或逗号)") },
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
-                        maxLines = 6
+                        maxLines = 5
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -160,7 +203,10 @@ fun SettingsCard(
                     // 资产列表
                     OutlinedTextField(
                         value = accounts,
-                        onValueChange = { accounts = it },
+                        onValueChange = {
+                            accounts = it
+                            saveAll(showToast = false)
+                        },
                         label = { Text("资产账户列表 (留空则不记录账户)") },
                         placeholder = { Text("留空默认不记录账户") },
                         modifier = Modifier.fillMaxWidth(),
@@ -172,7 +218,10 @@ fun SettingsCard(
                     // 默认账本
                     OutlinedTextField(
                         value = defaultBook,
-                        onValueChange = { defaultBook = it },
+                        onValueChange = {
+                            defaultBook = it
+                            saveAll(showToast = false)
+                        },
                         label = { Text("默认账本名称 (例如: 日常账本)") },
                         placeholder = { Text("日常账本") },
                         modifier = Modifier.fillMaxWidth(),
@@ -184,7 +233,10 @@ fun SettingsCard(
                     // Bearer Token
                     OutlinedTextField(
                         value = apiToken,
-                        onValueChange = { apiToken = it },
+                        onValueChange = {
+                            apiToken = it
+                            saveAll(showToast = false)
+                        },
                         label = { Text("局域网 API Bearer Token (可选鉴权)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
@@ -192,16 +244,10 @@ fun SettingsCard(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // 保存按钮
+                    // 保存并收起按钮
                     Button(
                         onClick = {
-                            prefs.geminiApiKey = apiKey
-                            prefs.geminiModel = geminiModel
-                            prefs.categories = categories
-                            prefs.accounts = accounts
-                            prefs.defaultBook = defaultBook
-                            prefs.apiToken = apiToken
-                            Toast.makeText(context, "配置已成功保存", Toast.LENGTH_SHORT).show()
+                            saveAll(showToast = true)
                             isExpanded = false
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -210,7 +256,7 @@ fun SettingsCard(
                     ) {
                         Icon(imageVector = Icons.Default.Save, contentDescription = "保存")
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("保存配置", fontSize = 15.sp)
+                        Text("保存并收起设置", fontSize = 15.sp)
                     }
                 }
             }

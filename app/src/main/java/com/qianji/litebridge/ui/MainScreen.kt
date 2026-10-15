@@ -1,12 +1,13 @@
 package com.qianji.litebridge.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ fun MainScreen(
     onAddLog: (String) -> Unit
 ) {
     val queueSize by queue.queueSize.collectAsState()
+    val scrollState = rememberScrollState()
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -43,6 +45,7 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             // 1. 顶部状态卡片 (IP, 端口, 队列计数)
@@ -54,20 +57,20 @@ fun MainScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 2. 可折叠配置区 (Gemini Key, 分类, 资产等)
+            // 2. 可折叠配置区 (输入即刻自动保存，亦可点击下方按钮收起)
             SettingsCard(
                 prefs = prefs
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 3. 中部实时日志控制台
+            // 3. 中部实时日志控制台 (固定高度，自适应滑动)
             LogConsole(
                 logs = logs,
                 onClearLogs = onClearLogs,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .height(200.dp)
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -79,6 +82,8 @@ fun MainScreen(
                 onLog = onAddLog,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
