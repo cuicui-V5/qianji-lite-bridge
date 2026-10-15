@@ -58,6 +58,10 @@ class PreferencesManager(context: Context) {
         get() = prefs.getInt(KEY_FLOATING_Y, -1)
         set(value) = prefs.edit().putInt(KEY_FLOATING_Y, value).apply()
 
+    var asrModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_ASR_MODE, true) // 默认开启系统语音识别转文字，秒级响应
+        set(value) = prefs.edit().putBoolean(KEY_ASR_MODE, value).apply()
+
     init {
         // 若之前保存了旧版默认资产账户，按最新需求重置为空（默认不留账户）
         val savedAccounts = prefs.getString(KEY_ACCOUNTS, null)
@@ -84,6 +88,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_FLOATING_CAPSULE = "floating_capsule_enabled"
         private const val KEY_FLOATING_X = "floating_capsule_x"
         private const val KEY_FLOATING_Y = "floating_capsule_y"
+        private const val KEY_ASR_MODE = "asr_mode_enabled"
 
         const val DEFAULT_CATEGORIES = """三餐
 交通

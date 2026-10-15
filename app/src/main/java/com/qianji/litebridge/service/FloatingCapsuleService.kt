@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.NotificationCompat
 import com.qianji.litebridge.MainActivity
 import com.qianji.litebridge.QianjiApp
+import com.qianji.litebridge.audio.SystemSpeechRecognizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -63,6 +64,7 @@ class FloatingCapsuleService : Service() {
 
     private var currentState = CapsuleState.IDLE
     private var mediaRecorder: MediaRecorder? = null
+    private var speechRecognizer: SystemSpeechRecognizer? = null
     private var currentRecordFile: File? = null
     private var recordStartTime = 0L
     private var wakeLock: PowerManager.WakeLock? = null
@@ -75,6 +77,8 @@ class FloatingCapsuleService : Service() {
 
         val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
         wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "QianjiLiteBridge:FloatingCapsuleRecording")
+
+        speechRecognizer = SystemSpeechRecognizer(this)
 
         startForegroundWithNotification()
         createCapsuleOverlay()
@@ -348,16 +352,43 @@ class FloatingCapsuleService : Service() {
 
     private fun startRecording() {
         val app = QianjiApp.instance
-        app.addLog("🎙️ [悬浮胶囊] 开始录音，按住说话...")
         recordStartTime = System.currentTimeMillis()
+
+        try {
+            wakeLock?.acquire(60_000) // 最长持有 60 秒唤醒锁，防止锁屏或休眠切断麦克风
+        } catch (_: Exception) {}
+
+        val useAsr = app.prefs.asrModeEnabled && (speechRecognizer?.isAvailable() == true)
+        if (useAsr) {
+            app.addLog("🎙️ [悬浮胶囊] 启动系统语音识别，按住说话...")
+            updateCapsuleStyle(CapsuleState.RECORDING, "🔴", "倾听中...")
+
+            speechRecognizer?.startListening(
+                onPartial = { partial ->
+                    val preview = if (partial.length > 6) "..." + partial.takeLast(5) else partial
+                    updateCapsuleStyle(CapsuleState.RECORDING, "🔴", preview)
+                },
+                onResult = { finalResult ->
+                    app.addLog("📝 [悬浮胶囊] 系统转录结果: \"$finalResult\"")
+                    processTranscribedText(finalResult)
+                },
+                onError = { errorMsg ->
+                    app.addLog("⚠️ [悬浮胶囊] 语音识别提示: $errorMsg")
+                    updateCapsuleStyle(CapsuleState.ERROR, "⚠️", "未听清")
+                    mainHandler.postDelayed({
+                        updateCapsuleStyle(CapsuleState.IDLE, "🎙️", "按住记账")
+                    }, 1500)
+                }
+            )
+            return
+        }
+
+        // 原生多模态录音模式
+        app.addLog("🎙️ [悬浮胶囊] 开始原生录音，按住说话...")
         val audioFile = File(cacheDir, "float_record_${recordStartTime}.m4a")
         currentRecordFile = audioFile
 
         try {
-            try {
-                wakeLock?.acquire(60_000) // 最长持有 60 秒唤醒锁，防止锁屏或休眠切断麦克风
-            } catch (_: Exception) {}
-
             mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(this)
             } else {
@@ -394,13 +425,89 @@ class FloatingCapsuleService : Service() {
         }
     }
 
+    private fun processTranscribedText(text: String) {
+        val app = QianjiApp.instance
+        if (text.isBlank()) {
+            app.addLog("⚠️ [悬浮胶囊] 未识别到有效文字内容")
+            updateCapsuleStyle(CapsuleState.ERROR, "⚠️", "未识别文字")
+            mainHandler.postDelayed({
+                updateCapsuleStyle(CapsuleState.IDLE, "🎙️", "按住记账")
+            }, 1500)
+            return
+        }
+
+        updateCapsuleStyle(CapsuleState.PROCESSING, "⚡", "AI解析中...")
+        app.addLog("🤖 [悬浮胶囊] 语音转文字完成 (\"$text\")，正在调用 Gemini 解析账单...")
+
+        serviceScope.launch {
+            try {
+                val bills = withContext(Dispatchers.IO) {
+                    app.geminiService.parseText(text) { progressMsg ->
+                        app.addLog(progressMsg)
+                    }
+                }
+
+                if (bills.isEmpty()) {
+                    app.addLog("⚠️ [悬浮胶囊] 未从文字中识别出有效账单")
+                    withContext(Dispatchers.Main) {
+                        updateCapsuleStyle(CapsuleState.ERROR, "⚠️", "未识别出金额")
+                    }
+                } else {
+                    val firstBill = bills.first()
+                    val summary = "${firstBill.catename ?: "账单"} ¥${firstBill.money}"
+                    app.addLog("✨ [悬浮胶囊] 识别成功 (${bills.size}笔): $summary，加入限流队列 (不抢占焦点)...")
+
+                    // 悬浮窗发起的记账：autoReturn 设为 false，钱迹记账后不强行跳回本 App，保留在用户当前宿主应用
+                    val billsToEnqueue = bills.map { it.copy(autoReturn = false) }
+                    app.queue.enqueueAll(billsToEnqueue)
+
+                    withContext(Dispatchers.Main) {
+                        vibrate(35)
+                        val display = if (bills.size == 1) "¥${firstBill.money} ${firstBill.catename ?: ""}".trim() else "已记 ${bills.size} 笔"
+                        updateCapsuleStyle(CapsuleState.SUCCESS, "✅", display)
+                    }
+                }
+            } catch (e: Exception) {
+                app.addLog("❌ [悬浮胶囊] AI解析异常: ${e.message}")
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    updateCapsuleStyle(CapsuleState.ERROR, "❌", "识别异常")
+                }
+            } finally {
+                delay(2000)
+                withContext(Dispatchers.Main) {
+                    if (currentState != CapsuleState.RECORDING) {
+                        updateCapsuleStyle(CapsuleState.IDLE, "🎙️", "按住记账")
+                    }
+                }
+            }
+        }
+    }
+
     private fun stopAndProcessRecording() {
         val duration = System.currentTimeMillis() - recordStartTime
+        val app = QianjiApp.instance
         try {
             if (wakeLock?.isHeld == true) {
                 wakeLock?.release()
             }
         } catch (_: Exception) {}
+
+        val useAsr = app.prefs.asrModeEnabled && (speechRecognizer?.isAvailable() == true)
+        if (useAsr) {
+            if (duration < 600) {
+                app.addLog("⚠️ [悬浮胶囊] 说话时间过短 (${duration}ms)，已忽略")
+                speechRecognizer?.cancel()
+                updateCapsuleStyle(CapsuleState.ERROR, "⚠️", "时间太短")
+                mainHandler.postDelayed({
+                    updateCapsuleStyle(CapsuleState.IDLE, "🎙️", "按住记账")
+                }, 1200)
+                return
+            }
+            updateCapsuleStyle(CapsuleState.PROCESSING, "⚡", "转写中...")
+            speechRecognizer?.stopListening()
+            return
+        }
 
         try {
             mediaRecorder?.stop()
@@ -412,7 +519,6 @@ class FloatingCapsuleService : Service() {
         }
 
         val file = currentRecordFile
-        val app = QianjiApp.instance
 
         if (duration < 600) {
             app.addLog("⚠️ [悬浮胶囊] 录音时长过短 (${duration}ms)，已自动忽略")
@@ -486,6 +592,10 @@ class FloatingCapsuleService : Service() {
         try {
             if (wakeLock?.isHeld == true) wakeLock?.release()
         } catch (_: Exception) {}
+        val useAsr = QianjiApp.instance.prefs.asrModeEnabled && (speechRecognizer?.isAvailable() == true)
+        if (useAsr) {
+            speechRecognizer?.cancel()
+        }
         try {
             mediaRecorder?.stop()
             mediaRecorder?.release()
@@ -524,6 +634,9 @@ class FloatingCapsuleService : Service() {
             if (wakeLock?.isHeld == true) wakeLock?.release()
         } catch (_: Exception) {}
         wakeLock = null
+
+        speechRecognizer?.destroy()
+        speechRecognizer = null
 
         try {
             mediaRecorder?.release()

@@ -64,6 +64,7 @@ fun SettingsCard(
     var geminiModel by remember { mutableStateOf(prefs.geminiModel) }
     var thinkingBudgetText by remember { mutableStateOf(prefs.thinkingBudget.toString()) }
     var autoReturn by remember { mutableStateOf(prefs.autoReturn) }
+    var asrModeEnabled by remember { mutableStateOf(prefs.asrModeEnabled) }
 
     var isApiKeyVisible by remember { mutableStateOf(false) }
     var showAutoSavedHint by remember { mutableStateOf(false) }
@@ -78,6 +79,7 @@ fun SettingsCard(
         val budget = thinkingBudgetText.toIntOrNull() ?: 0
         prefs.thinkingBudget = budget
         prefs.autoReturn = autoReturn
+        prefs.asrModeEnabled = asrModeEnabled
         showAutoSavedHint = true
         if (showToast) {
             Toast.makeText(context, "配置已成功保存", Toast.LENGTH_SHORT).show()
@@ -205,6 +207,47 @@ fun SettingsCard(
                             }
                         }
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 语音输入与解析模式切换 (系统ASR转文字 vs 原生多模态直接上传)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (asrModeEnabled) "语音模式：系统语音转文字 (推荐·极速)" else "语音模式：原生多模态直接上传",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = if (asrModeEnabled) SuccessGreen else MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (asrModeEnabled)
+                                    "开启：优先由系统秒级将语音转为文字，再发送给 AI 解析（响应只需 1~2 秒）"
+                                else
+                                    "关闭：直接将录音音频文件多模态上传至 Gemini（需等待音频特征编码，耗时约 10 秒）",
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = asrModeEnabled,
+                            onCheckedChange = {
+                                asrModeEnabled = it
+                                prefs.asrModeEnabled = it
+                                saveAll(showToast = false)
+                            }
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
 

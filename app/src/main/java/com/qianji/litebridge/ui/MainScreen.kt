@@ -1,5 +1,14 @@
 package com.qianji.litebridge.ui
 
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -7,26 +16,39 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.qianji.litebridge.service.FloatingCapsuleService
 import com.qianji.litebridge.service.GeminiService
 import com.qianji.litebridge.service.RateLimitQueue
-import com.qianji.litebridge.ui.components.FloatingCapsuleCard
 import com.qianji.litebridge.ui.components.HoldToSpeakButton
+import com.qianji.litebridge.ui.theme.SuccessGreen
 import com.qianji.litebridge.util.PreferencesManager
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,6 +61,51 @@ fun MainScreen(
     onAddLog: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val isFloatingRunning by FloatingCapsuleService.isRunning
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            FloatingCapsuleService.start(context)
+            prefs.floatingCapsuleEnabled = true
+            Toast.makeText(context, "悬浮胶囊已启动", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "未授予录音权限，无法开启悬浮窗语音记账", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun toggleFloating() {
+        if (!isFloatingRunning) {
+            if (!Settings.canDrawOverlays(context)) {
+                Toast.makeText(context, "请在系统设置中允许“显示在其他应用上层 / 悬浮窗”权限", Toast.LENGTH_LONG).show()
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}")
+                )
+                context.startActivity(intent)
+                return
+            }
+            val hasAudio = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (!hasAudio) {
+                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                return
+            }
+            FloatingCapsuleService.start(context)
+            prefs.floatingCapsuleEnabled = true
+            Toast.makeText(context, "悬浮胶囊已开启", Toast.LENGTH_SHORT).show()
+        } else {
+            FloatingCapsuleService.stop(context)
+            prefs.floatingCapsuleEnabled = false
+            Toast.makeText(context, "悬浮胶囊已关闭", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -51,7 +118,6 @@ fun MainScreen(
                     )
                 },
                 actions = {
-                    // 主界面只保留的核心控件之一：设置/调试按钮
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(
                             imageVector = Icons.Default.Tune,
@@ -76,15 +142,55 @@ fun MainScreen(
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 主界面核心控件之二：打开悬浮窗模式按钮卡片
-            FloatingCapsuleCard(
-                prefs = prefs,
-                modifier = Modifier.fillMaxWidth()
-            )
+            // 极简首页控件：精简为一个极简直接的开启/关闭悬浮窗按钮
+            if (!isFloatingRunning) {
+                Button(
+                    onClick = { toggleFloating() },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Layers,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "开启桌面悬浮窗模式",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { toggleFloating() },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = null,
+                        tint = SuccessGreen,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "桌面悬浮窗已开启 (点击关闭)",
+                        color = SuccessGreen,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                }
+            }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
-            // 主界面核心控件之三：最主要的录音大按钮
+            // 首页最主要的核心控件：超大按住记账按钮
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -92,21 +198,24 @@ fun MainScreen(
                 HoldToSpeakButton(
                     geminiService = geminiService,
                     queue = queue,
+                    prefs = prefs,
                     onLog = onAddLog,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(240.dp)
+                        .height(260.dp)
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "按住大按钮说话记账 · 或点击右上角进入设置与调试",
+                    text = if (prefs.asrModeEnabled) "当前模式: 系统语音转文字 (秒级响应)" else "当前模式: 原生多模态直接上传 (约10秒)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     fontSize = 12.sp
                 )
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
