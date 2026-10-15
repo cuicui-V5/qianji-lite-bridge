@@ -116,7 +116,8 @@ fun SettingsCard(
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = { apiKey = it },
-                        label = { Text("Gemini API Key (留空使用环境变量)") },
+                        label = { Text("Gemini API Key") },
+                        placeholder = { Text("AIzaSy...") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -148,9 +149,10 @@ fun SettingsCard(
                     OutlinedTextField(
                         value = categories,
                         onValueChange = { categories = it },
-                        label = { Text("分类枚举列表 (逗号分隔，支持 一级/::/二级)") },
+                        label = { Text("分类枚举列表 (支持换行或逗号)") },
                         modifier = Modifier.fillMaxWidth(),
-                        maxLines = 3
+                        minLines = 3,
+                        maxLines = 6
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -159,7 +161,8 @@ fun SettingsCard(
                     OutlinedTextField(
                         value = accounts,
                         onValueChange = { accounts = it },
-                        label = { Text("资产账户列表 (逗号分隔)") },
+                        label = { Text("资产账户列表 (留空则不记录账户)") },
+                        placeholder = { Text("留空默认不记录账户") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -170,7 +173,8 @@ fun SettingsCard(
                     OutlinedTextField(
                         value = defaultBook,
                         onValueChange = { defaultBook = it },
-                        label = { Text("默认账本名称 (可选，留空使用钱迹默认账本)") },
+                        label = { Text("默认账本名称 (例如: 日常账本)") },
+                        placeholder = { Text("日常账本") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )

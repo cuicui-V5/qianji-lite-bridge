@@ -13,7 +13,10 @@ class PreferencesManager(context: Context) {
         set(value) = prefs.edit().putString(KEY_GEMINI_API_KEY, value.trim()).apply()
 
     var categories: String
-        get() = prefs.getString(KEY_CATEGORIES, DEFAULT_CATEGORIES) ?: DEFAULT_CATEGORIES
+        get() {
+            val v = prefs.getString(KEY_CATEGORIES, null)
+            return if (!v.isNullOrBlank()) v else DEFAULT_CATEGORIES
+        }
         set(value) = prefs.edit().putString(KEY_CATEGORIES, value.trim()).apply()
 
     var accounts: String
@@ -21,7 +24,10 @@ class PreferencesManager(context: Context) {
         set(value) = prefs.edit().putString(KEY_ACCOUNTS, value.trim()).apply()
 
     var defaultBook: String
-        get() = prefs.getString(KEY_DEFAULT_BOOK, "") ?: ""
+        get() {
+            val v = prefs.getString(KEY_DEFAULT_BOOK, null)
+            return if (!v.isNullOrBlank()) v else DEFAULT_BOOK
+        }
         set(value) = prefs.edit().putString(KEY_DEFAULT_BOOK, value.trim()).apply()
 
     var apiToken: String
@@ -32,6 +38,19 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString(KEY_GEMINI_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
         set(value) = prefs.edit().putString(KEY_GEMINI_MODEL, value.trim()).apply()
 
+    init {
+        // 若之前保存了旧版默认资产账户，按最新需求重置为空（默认不留账户）
+        val savedAccounts = prefs.getString(KEY_ACCOUNTS, null)
+        if (savedAccounts == "微信,支付宝,银行卡") {
+            accounts = ""
+        }
+        // 若之前保存的分类是旧版逗号列表，更新为用户指定的分类列表
+        val savedCategories = prefs.getString(KEY_CATEGORIES, null)
+        if (savedCategories == "三餐/::/早餐,三餐/::/午餐,三餐/::/晚餐,交通,日用,零食,其它") {
+            categories = DEFAULT_CATEGORIES
+        }
+    }
+
     companion object {
         private const val PREF_NAME = "qianji_lite_bridge_prefs"
         private const val KEY_GEMINI_API_KEY = "gemini_api_key"
@@ -41,8 +60,27 @@ class PreferencesManager(context: Context) {
         private const val KEY_API_TOKEN = "api_token"
         private const val KEY_GEMINI_MODEL = "gemini_model"
 
-        const val DEFAULT_CATEGORIES = "三餐/::/早餐,三餐/::/午餐,三餐/::/晚餐,交通,日用,零食,其它"
-        const val DEFAULT_ACCOUNTS = "微信,支付宝,银行卡"
+        const val DEFAULT_CATEGORIES = """三餐
+交通
+零食
+衣服
+日用品
+旅行
+学习
+住房
+美妆
+话费网费
+医疗
+娱乐
+汽车/加油
+请客送礼
+电器数码
+水电煤
+其它
+数字订阅"""
+
+        const val DEFAULT_ACCOUNTS = ""
+        const val DEFAULT_BOOK = "日常账本"
         const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
     }
 }
