@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.qianji.litebridge.service.GeminiService
 import com.qianji.litebridge.service.RateLimitQueue
+import com.qianji.litebridge.ui.components.FloatingCapsuleCard
 import com.qianji.litebridge.ui.components.HoldToSpeakButton
 import com.qianji.litebridge.ui.components.LogConsole
 import com.qianji.litebridge.ui.components.SettingsCard
@@ -53,6 +54,13 @@ fun MainScreen(
                 ipAddress = ipAddress,
                 port = port,
                 queueSize = queueSize
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 1.5 全局桌面悬浮胶囊控制卡片 (一键开启/关闭)
+            FloatingCapsuleCard(
+                prefs = prefs
             )
 
             Spacer(modifier = Modifier.height(12.dp))

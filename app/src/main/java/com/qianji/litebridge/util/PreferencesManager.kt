@@ -46,6 +46,18 @@ class PreferencesManager(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_RETURN, DEFAULT_AUTO_RETURN)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_RETURN, value).apply()
 
+    var floatingCapsuleEnabled: Boolean
+        get() = prefs.getBoolean(KEY_FLOATING_CAPSULE, false)
+        set(value) = prefs.edit().putBoolean(KEY_FLOATING_CAPSULE, value).apply()
+
+    var floatingX: Int
+        get() = prefs.getInt(KEY_FLOATING_X, -1)
+        set(value) = prefs.edit().putInt(KEY_FLOATING_X, value).apply()
+
+    var floatingY: Int
+        get() = prefs.getInt(KEY_FLOATING_Y, -1)
+        set(value) = prefs.edit().putInt(KEY_FLOATING_Y, value).apply()
+
     init {
         // 若之前保存了旧版默认资产账户，按最新需求重置为空（默认不留账户）
         val savedAccounts = prefs.getString(KEY_ACCOUNTS, null)
@@ -69,6 +81,9 @@ class PreferencesManager(context: Context) {
         private const val KEY_GEMINI_MODEL = "gemini_model"
         private const val KEY_THINKING_BUDGET = "thinking_budget"
         private const val KEY_AUTO_RETURN = "auto_return"
+        private const val KEY_FLOATING_CAPSULE = "floating_capsule_enabled"
+        private const val KEY_FLOATING_X = "floating_capsule_x"
+        private const val KEY_FLOATING_Y = "floating_capsule_y"
 
         const val DEFAULT_CATEGORIES = """三餐
 交通
