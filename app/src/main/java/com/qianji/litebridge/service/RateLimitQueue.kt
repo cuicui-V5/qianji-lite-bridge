@@ -2,6 +2,7 @@ package com.qianji.litebridge.service
 
 import android.content.Context
 import com.qianji.litebridge.model.BillItem
+import com.qianji.litebridge.util.PreferencesManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class RateLimitQueue(
     private val context: Context,
+    private val prefs: PreferencesManager,
     private val onLog: (String) -> Unit
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -34,6 +36,12 @@ class RateLimitQueue(
      * 将账单加入限流队列
      */
     fun enqueue(bill: BillItem) {
+        // 严格拦截过滤非正数账单
+        if (bill.money <= 0.0) {
+            onLog("⚠️ 丢弃未指明金额的非法账单: ${bill.remark ?: "未知"}")
+            return
+        }
+
         val count = atomicCount.incrementAndGet()
         _queueSize.value = count
         scope.launch {
@@ -45,7 +53,7 @@ class RateLimitQueue(
      * 批量加入队列
      */
     fun enqueueAll(bills: List<BillItem>) {
-        bills.forEach { enqueue(it) }
+        bills.filter { it.money > 0.0 }.forEach { enqueue(it) }
     }
 
     private fun startConsumer() {
@@ -54,9 +62,9 @@ class RateLimitQueue(
                 val bill = channel.receive()
                 try {
                     onLog("⏳ 准备派发: ${bill.summary()}")
-                    val success = QianjiLauncher.launch(context, bill)
+                    val success = QianjiLauncher.launch(context, bill, autoReturn = prefs.autoReturn)
                     if (success) {
-                        onLog("✅ 已唤起钱迹: ${bill.summary()}")
+                        onLog("✅ 已唤起钱迹记账: ${bill.summary()}${if (prefs.autoReturn) " (随后自动切回本网关)" else ""}")
                     } else {
                         onLog("❌ 唤起钱迹失败 (未找到钱迹App或权限受限): ${bill.summary()}")
                     }

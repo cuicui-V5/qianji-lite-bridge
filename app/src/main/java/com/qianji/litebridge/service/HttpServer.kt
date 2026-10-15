@@ -8,7 +8,6 @@ import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -87,7 +86,7 @@ class HttpServer(
             put("status", "running")
             put("port", port)
             put("queue_size", queue.queueSize.value)
-            put("version", "1.0.0")
+            put("version", "1.0.3")
         }
         return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString())
     }
@@ -113,14 +112,23 @@ class HttpServer(
             bills.add(single)
         }
 
-        // 入队
-        queue.enqueueAll(bills)
-        onLog("📥 局域网入队 ${bills.size} 笔账单 (Raw 直通)")
+        // 过滤非正数账单
+        val validBills = bills.filter { it.money > 0.0 }
+        if (validBills.isEmpty()) {
+            return newFixedLengthResponse(
+                Response.Status.BAD_REQUEST,
+                "application/json",
+                """{"code": 400, "message": "All bills rejected: money must be greater than 0"}"""
+            )
+        }
+
+        queue.enqueueAll(validBills)
+        onLog("📥 局域网入队 ${validBills.size} 笔账单 (Raw 直通)")
 
         val responseJson = JSONObject().apply {
             put("code", 200)
             put("message", "Queued")
-            put("count", bills.size)
+            put("count", validBills.size)
             put("queue_size", queue.queueSize.value)
         }
 
@@ -143,16 +151,13 @@ class HttpServer(
             if (json.has("text")) {
                 textPrompt = json.getString("text")
             }
-        } catch (_: Exception) {
-            // 纯文本格式直接使用
-        }
+        } catch (_: Exception) {}
 
         onLog("🤖 局域网发起 AI 账单解析: \"$textPrompt\"")
 
-        // 同步调用 Gemini 解析，然后入队
         return try {
             val bills = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-                geminiService.parseText(textPrompt)
+                geminiService.parseText(textPrompt) { msg -> onLog(msg) }
             }
             queue.enqueueAll(bills)
             onLog("✨ AI 成功提取并入队 ${bills.size} 笔账单")

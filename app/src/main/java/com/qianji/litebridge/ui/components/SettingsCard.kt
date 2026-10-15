@@ -29,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -62,6 +63,7 @@ fun SettingsCard(
     var apiToken by remember { mutableStateOf(prefs.apiToken) }
     var geminiModel by remember { mutableStateOf(prefs.geminiModel) }
     var thinkingBudgetText by remember { mutableStateOf(prefs.thinkingBudget.toString()) }
+    var autoReturn by remember { mutableStateOf(prefs.autoReturn) }
 
     var isApiKeyVisible by remember { mutableStateOf(false) }
     var showAutoSavedHint by remember { mutableStateOf(false) }
@@ -75,6 +77,7 @@ fun SettingsCard(
         prefs.apiToken = apiToken
         val budget = thinkingBudgetText.toIntOrNull() ?: 0
         prefs.thinkingBudget = budget
+        prefs.autoReturn = autoReturn
         showAutoSavedHint = true
         if (showToast) {
             Toast.makeText(context, "配置已成功保存", Toast.LENGTH_SHORT).show()
@@ -149,6 +152,38 @@ fun SettingsCard(
                         .fillMaxWidth()
                         .padding(top = 16.dp)
                 ) {
+                    // 记账后自动跳回本应用开关
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "记账后自动跳回本网关",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "唤起钱迹完成记账后，自动切回本网关保持前台常亮",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = autoReturn,
+                            onCheckedChange = {
+                                autoReturn = it
+                                prefs.autoReturn = it
+                                showAutoSavedHint = true
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     // Gemini API Key
                     OutlinedTextField(
                         value = apiKey,

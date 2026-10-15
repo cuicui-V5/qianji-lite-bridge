@@ -88,7 +88,6 @@ class GeminiService(
             }
         } catch (e: Exception) {
             lastError = e
-            // 若模型不支持 thinkingConfig，尝试无 config 降级调用
             try {
                 val partAudio = Part.fromBytes(audioBytes, "audio/mp4")
                 val partPrompt = Part.fromText(promptText)
@@ -304,6 +303,7 @@ $bookRule
 4. JSON 数组中每个对象字段规范：
 - "type": 整数。0=支出，1=收入，2=转账，3=信用卡还款，5=报销。默认 0。
 - "money": 浮点数，账单金额，必须 > 0，精确到小数点后2位（例如 25.50）。
+  * 核心注意：如果用户未明确说出具体的消费金额（例如仅说'中午吃了饭'或'打车回家'），禁止猜测金额为0！未说明金额的收支请直接丢弃，若整段话均无具体金额，请直接返回空数组 []！
 - "time": 字符串，格式 yyyy-MM-dd HH:mm:ss。若提到了"刚才/今天中午/昨天晚上/前天"等相对时间，请结合当前系统时间推算绝对时间；若未提及则直接使用当前时间。
 - "remark": 简要备注说明。
 - "catename": 分类名称（转账或还款时为 null）。
@@ -346,7 +346,6 @@ $bookRule
             throw IllegalStateException("模型返回的文本为空")
         }
 
-        // 提取有效 JSON 块
         val startBracket = clean.indexOf('[')
         val startBrace = clean.indexOf('{')
         val jsonArray: JSONArray = if (startBracket != -1 && (startBrace == -1 || startBracket < startBrace)) {
@@ -371,7 +370,13 @@ $bookRule
         val type = object : TypeToken<List<BillItem>>() {}.type
         val list: List<BillItem> = gson.fromJson(jsonArray.toString(), type)
 
-        return list.map { item ->
+        // 严格过滤金额有效性：钱迹接口强制要求 money > 0
+        val validList = list.filter { it.money > 0.0 }
+        if (validList.isEmpty()) {
+            throw IllegalStateException("未检测到有效消费金额（钱迹要求金额必须大于0），请在语音中说明花费金额，例如：'吃午餐花了25元'")
+        }
+
+        return validList.map { item ->
             item.copy(
                 time = if (item.time.isNullOrBlank()) defaultTime else item.time,
                 bookname = if (item.bookname.isNullOrBlank()) prefs.defaultBook.ifBlank { PreferencesManager.DEFAULT_BOOK } else item.bookname,

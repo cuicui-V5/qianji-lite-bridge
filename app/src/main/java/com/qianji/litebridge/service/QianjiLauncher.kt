@@ -4,7 +4,12 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.qianji.litebridge.MainActivity
 import com.qianji.litebridge.model.BillItem
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 object QianjiLauncher {
@@ -22,10 +27,11 @@ object QianjiLauncher {
         params.add("type" to bill.type.toString())
 
         // money: 必须大于 0，格式化为最多2位小数
-        val moneyStr = if (bill.money % 1.0 == 0.0) {
-            bill.money.toLong().toString()
+        val moneyVal = bill.money.coerceAtLeast(0.01)
+        val moneyStr = if (moneyVal % 1.0 == 0.0) {
+            moneyVal.toLong().toString()
         } else {
-            String.format(Locale.US, "%.2f", bill.money).trimEnd('0').trimEnd('.')
+            String.format(Locale.US, "%.2f", moneyVal).trimEnd('0').trimEnd('.')
         }
         params.add("money" to moneyStr)
 
@@ -95,19 +101,19 @@ object QianjiLauncher {
 
     /**
      * 发送 Intent 唤起钱迹客户端
+     * @param autoReturn 记账触发后是否自动切回本应用保持前台常亮
      */
-    fun launch(context: Context, bill: BillItem): Boolean {
+    fun launch(context: Context, bill: BillItem, autoReturn: Boolean = true): Boolean {
         val uri = buildUri(bill)
         val intent = Intent(Intent.ACTION_VIEW, uri).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
             setPackage(QIANJI_PACKAGE)
         }
 
-        return try {
+        val launched = try {
             context.startActivity(intent)
             true
         } catch (e: ActivityNotFoundException) {
-            // 若显式指定包名失败，则尝试系统广播/隐式匹配
             try {
                 val fallbackIntent = Intent(Intent.ACTION_VIEW, uri).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -122,5 +128,24 @@ object QianjiLauncher {
             e.printStackTrace()
             false
         }
+
+        // 记账触发后，延迟 600ms 等待钱迹接收 Intent 并保存，自动将本 App 调回前台保持常亮
+        if (launched && autoReturn) {
+            CoroutineScope(Dispatchers.Main).launch {
+                delay(600)
+                try {
+                    val backIntent = Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(backIntent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        return launched
     }
 }

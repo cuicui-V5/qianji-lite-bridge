@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         prefs = PreferencesManager(this)
-        queue = RateLimitQueue(this) { message -> addLog(message) }
+        queue = RateLimitQueue(this, prefs) { message -> addLog(message) }
         geminiService = GeminiService(prefs)
 
         val localIp = NetworkUtils.getLocalIpAddress(this)
@@ -82,7 +82,6 @@ class MainActivity : ComponentActivity() {
     private fun addLog(message: String) {
         val timestamp = timeFormat.format(Date())
         logs.add("[$timestamp] $message")
-        // 最多保留最新 200 条日志
         if (logs.size > 200) {
             logs.removeAt(0)
         }
@@ -90,7 +89,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // 退出 App 时自动停止 HTTP 服务
         try {
             httpServer?.stop()
             httpServer = null
