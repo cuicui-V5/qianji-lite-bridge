@@ -44,7 +44,14 @@ data class BillItem(
     val coupon: Double? = null, // 优惠券金额 (> 0 且 <= money)
 
     @SerializedName("showresult")
-    val showresult: Int? = 1 // 1: 显示记账Toast, 0: 不显示
+    val showresult: Int? = 1, // 1: 显示记账Toast, 0: 不显示
+
+    /**
+     * 记账后是否自动跳回本网关主界面
+     * (悬浮窗触发设为 false，保留在宿主应用；主界面触发设为 true，保持常亮)
+     */
+    @Transient
+    val autoReturn: Boolean = true
 ) {
     fun typeLabel(): String = when (type) {
         0 -> "支出"

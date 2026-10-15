@@ -241,6 +241,15 @@ fun FloatingCapsuleCard(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "💡 提示：在第三方应用中长按记账后会自动留在当前应用；若锁屏后录音异常，请在系统设置中将本应用电池优化设为“无限制”。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
         }
     }
 }

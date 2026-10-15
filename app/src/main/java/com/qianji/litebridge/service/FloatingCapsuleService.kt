@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -64,12 +65,16 @@ class FloatingCapsuleService : Service() {
     private var mediaRecorder: MediaRecorder? = null
     private var currentRecordFile: File? = null
     private var recordStartTime = 0L
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         isRunning.value = true
+
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "QianjiLiteBridge:FloatingCapsuleRecording")
 
         startForegroundWithNotification()
         createCapsuleOverlay()
@@ -131,13 +136,13 @@ class FloatingCapsuleService : Service() {
                 startForeground(
                     NOTIFICATION_ID,
                     notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                 )
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIFICATION_ID,
                     notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                 )
             } else {
                 startForeground(NOTIFICATION_ID, notification)
@@ -349,6 +354,10 @@ class FloatingCapsuleService : Service() {
         currentRecordFile = audioFile
 
         try {
+            try {
+                wakeLock?.acquire(60_000) // 最长持有 60 秒唤醒锁，防止锁屏或休眠切断麦克风
+            } catch (_: Exception) {}
+
             mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(this)
             } else {
@@ -362,12 +371,21 @@ class FloatingCapsuleService : Service() {
                 setAudioSamplingRate(16000)
                 setAudioEncodingBitRate(32000)
                 setOutputFile(audioFile.absolutePath)
+                setOnErrorListener { _, what, extra ->
+                    app.addLog("❌ [悬浮胶囊] 录音底层被系统中断 (what=$what, extra=$extra)")
+                    mainHandler.post {
+                        updateCapsuleStyle(CapsuleState.ERROR, "❌", "录音被中断")
+                    }
+                }
                 prepare()
                 start()
             }
             updateCapsuleStyle(CapsuleState.RECORDING, "🔴", "正在录音...")
         } catch (e: Exception) {
             e.printStackTrace()
+            try {
+                if (wakeLock?.isHeld == true) wakeLock?.release()
+            } catch (_: Exception) {}
             app.addLog("❌ [悬浮胶囊] 录音启动失败: ${e.message}")
             updateCapsuleStyle(CapsuleState.ERROR, "❌", "录音失败")
             mainHandler.postDelayed({
@@ -378,6 +396,12 @@ class FloatingCapsuleService : Service() {
 
     private fun stopAndProcessRecording() {
         val duration = System.currentTimeMillis() - recordStartTime
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (_: Exception) {}
+
         try {
             mediaRecorder?.stop()
             mediaRecorder?.release()
@@ -428,8 +452,11 @@ class FloatingCapsuleService : Service() {
                 } else {
                     val firstBill = bills.first()
                     val summary = "${firstBill.catename ?: "账单"} ¥${firstBill.money}"
-                    app.addLog("✨ [悬浮胶囊] 识别成功 (${bills.size}笔): $summary，加入限流队列...")
-                    app.queue.enqueueAll(bills)
+                    app.addLog("✨ [悬浮胶囊] 识别成功 (${bills.size}笔): $summary，加入限流队列 (不抢占焦点)...")
+                    
+                    // 悬浮窗发起的记账：autoReturn 设为 false，钱迹记账后不强行跳回本 App，保留在用户当前宿主应用
+                    val billsToEnqueue = bills.map { it.copy(autoReturn = false) }
+                    app.queue.enqueueAll(billsToEnqueue)
 
                     withContext(Dispatchers.Main) {
                         vibrate(35)
@@ -456,6 +483,9 @@ class FloatingCapsuleService : Service() {
     }
 
     private fun cancelRecording() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {}
         try {
             mediaRecorder?.stop()
             mediaRecorder?.release()
@@ -489,6 +519,11 @@ class FloatingCapsuleService : Service() {
         isRunning.value = false
         serviceScope.cancel()
         mainHandler.removeCallbacksAndMessages(null)
+
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {}
+        wakeLock = null
 
         try {
             mediaRecorder?.release()
