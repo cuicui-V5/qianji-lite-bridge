@@ -38,6 +38,10 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString(KEY_GEMINI_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
         set(value) = prefs.edit().putString(KEY_GEMINI_MODEL, value.trim()).apply()
 
+    var thinkingBudget: Int
+        get() = prefs.getInt(KEY_THINKING_BUDGET, DEFAULT_THINKING_BUDGET)
+        set(value) = prefs.edit().putInt(KEY_THINKING_BUDGET, value).apply()
+
     init {
         // 若之前保存了旧版默认资产账户，按最新需求重置为空（默认不留账户）
         val savedAccounts = prefs.getString(KEY_ACCOUNTS, null)
@@ -59,6 +63,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_DEFAULT_BOOK = "default_book"
         private const val KEY_API_TOKEN = "api_token"
         private const val KEY_GEMINI_MODEL = "gemini_model"
+        private const val KEY_THINKING_BUDGET = "thinking_budget"
 
         const val DEFAULT_CATEGORIES = """三餐
 交通
@@ -82,5 +87,6 @@ class PreferencesManager(context: Context) {
         const val DEFAULT_ACCOUNTS = ""
         const val DEFAULT_BOOK = "日常账本"
         const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
+        const val DEFAULT_THINKING_BUDGET = 0 // 0 = 关闭深度思考，极速 1~2 秒响应
     }
 }

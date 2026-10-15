@@ -61,6 +61,7 @@ fun SettingsCard(
     var defaultBook by remember { mutableStateOf(prefs.defaultBook) }
     var apiToken by remember { mutableStateOf(prefs.apiToken) }
     var geminiModel by remember { mutableStateOf(prefs.geminiModel) }
+    var thinkingBudgetText by remember { mutableStateOf(prefs.thinkingBudget.toString()) }
 
     var isApiKeyVisible by remember { mutableStateOf(false) }
     var showAutoSavedHint by remember { mutableStateOf(false) }
@@ -72,6 +73,8 @@ fun SettingsCard(
         prefs.accounts = accounts
         prefs.defaultBook = defaultBook
         prefs.apiToken = apiToken
+        val budget = thinkingBudgetText.toIntOrNull() ?: 0
+        prefs.thinkingBudget = budget
         showAutoSavedHint = true
         if (showToast) {
             Toast.makeText(context, "配置已成功保存", Toast.LENGTH_SHORT).show()
@@ -146,7 +149,7 @@ fun SettingsCard(
                         .fillMaxWidth()
                         .padding(top = 16.dp)
                 ) {
-                    // Gemini API Key (输入即刻实时自动保存)
+                    // Gemini API Key
                     OutlinedTextField(
                         value = apiKey,
                         onValueChange = {
@@ -179,6 +182,22 @@ fun SettingsCard(
                         },
                         label = { Text("Gemini 模型名称") },
                         placeholder = { Text("gemini-3.5-flash-lite") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 思考预算 / 推理等级 (Thinking Budget)
+                    OutlinedTextField(
+                        value = thinkingBudgetText,
+                        onValueChange = {
+                            thinkingBudgetText = it.filter { char -> char.isDigit() }
+                            saveAll(showToast = false)
+                        },
+                        label = { Text("思考预算 / Thinking Budget (0=极速关闭深度思考)") },
+                        placeholder = { Text("0") },
+                        supportingText = { Text("0=关闭深度思考 (1~2秒极速返回，推荐用于记账)；>0 则启用 CoT 深度思考") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )

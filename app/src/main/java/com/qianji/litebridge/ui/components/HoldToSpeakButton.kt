@@ -12,7 +12,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -34,7 +33,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -136,6 +134,7 @@ fun HoldToSpeakButton(
             val audioFile = File(context.cacheDir, "record_${pressStartTime}.m4a")
             currentRecordFile = audioFile
 
+            // 针对语音识别模型优化的轻量录音参数 (16kHz 单声道 32kbps AAC，体积小80%，秒速上传)
             val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(context)
             } else {
@@ -145,8 +144,9 @@ fun HoldToSpeakButton(
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioSamplingRate(44100)
-                setAudioEncodingBitRate(96000)
+                setAudioChannels(1)
+                setAudioSamplingRate(16000)
+                setAudioEncodingBitRate(32000)
                 setOutputFile(audioFile.absolutePath)
                 prepare()
                 start()
@@ -175,7 +175,6 @@ fun HoldToSpeakButton(
 
         val file = currentRecordFile
         if (duration < 800) {
-            // 按下时间小于 800ms 判定为误触
             onLog("⚠️ 录音时间太短 (${duration}ms)，已自动忽略")
             file?.delete()
             recordState = RecordState.IDLE
@@ -194,7 +193,9 @@ fun HoldToSpeakButton(
         scope.launch {
             try {
                 val bills = withContext(Dispatchers.IO) {
-                    geminiService.parseAudio(file)
+                    geminiService.parseAudio(file) { progressMsg ->
+                        onLog(progressMsg)
+                    }
                 }
 
                 if (bills.isEmpty()) {
@@ -217,7 +218,7 @@ fun HoldToSpeakButton(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(180.dp)
+            .height(170.dp)
             .clip(RoundedCornerShape(24.dp))
             .pointerInput(hasAudioPermission) {
                 if (recordState == RecordState.PROCESSING) return@pointerInput
@@ -230,7 +231,6 @@ fun HoldToSpeakButton(
                     if (upOrCancel != null) {
                         stopAndProcessRecording()
                     } else {
-                        // 手势取消
                         try {
                             mediaRecorder?.stop()
                             mediaRecorder?.release()
@@ -262,7 +262,7 @@ fun HoldToSpeakButton(
                     RecordState.IDLE -> {
                         Box(
                             modifier = Modifier
-                                .size(64.dp)
+                                .size(60.dp)
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center
@@ -271,10 +271,10 @@ fun HoldToSpeakButton(
                                 imageVector = Icons.Default.Mic,
                                 contentDescription = "按住说话",
                                 tint = Color.White,
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(34.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text(
                             text = "按住 说话记账",
                             color = Color.White,
@@ -283,7 +283,7 @@ fun HoldToSpeakButton(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "支持多模态直传 Gemini，一句话录入多笔账单",
+                            text = "多模态直传 Gemini · 秒级响应",
                             color = Color.White.copy(alpha = 0.8f),
                             fontSize = 12.sp
                         )
@@ -292,7 +292,7 @@ fun HoldToSpeakButton(
                     RecordState.RECORDING -> {
                         Box(
                             modifier = Modifier
-                                .size(64.dp)
+                                .size(60.dp)
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.3f)),
                             contentAlignment = Alignment.Center
@@ -301,10 +301,10 @@ fun HoldToSpeakButton(
                                 imageVector = Icons.Default.Mic,
                                 contentDescription = "正在录音",
                                 tint = Color.White,
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(34.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text(
                             text = "正在录音中... 松开立即记账",
                             color = Color.White,
@@ -317,13 +317,13 @@ fun HoldToSpeakButton(
                         CircularProgressIndicator(
                             color = Color.White,
                             strokeWidth = 3.dp,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(44.dp)
                         )
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "AI 正在提取账单...",
                             color = Color.White,
-                            fontSize = 17.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }

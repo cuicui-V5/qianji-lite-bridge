@@ -10,7 +10,9 @@ import com.google.genai.gaos.models.interactions.ModelOutputStep
 import com.google.genai.gaos.models.interactions.TextContent
 import com.google.genai.gaos.models.operations.CreateInteractionRequestBody
 import com.google.genai.types.Content as TypesContent
+import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.Part
+import com.google.genai.types.ThinkingConfig
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.qianji.litebridge.model.BillItem
@@ -45,33 +47,63 @@ class GeminiService(
     /**
      * 解析录音音频文件中的账单
      */
-    suspend fun parseAudio(audioFile: File): List<BillItem> = withContext(Dispatchers.IO) {
+    suspend fun parseAudio(
+        audioFile: File,
+        onProgress: (String) -> Unit = {}
+    ): List<BillItem> = withContext(Dispatchers.IO) {
         val client = getClient()
         val currentDateTime = getCurrentDateTimeString()
         val promptText = buildPrompt(currentDateTime)
         val modelName = prefs.geminiModel.ifBlank { PreferencesManager.DEFAULT_MODEL }
+        val thinkingBudget = prefs.thinkingBudget
         val audioBytes = audioFile.readBytes()
+
+        onProgress("📤 正在上传音频 (${audioBytes.size / 1024} KB)，请求 Gemini ($modelName, 思考预算: $thinkingBudget)...")
+        val startTime = System.currentTimeMillis()
 
         var jsonResult = ""
         var lastError: Exception? = null
 
-        // 策略 1：使用官方核心标准模型接口 client.models.generateContent
+        // 策略 1：使用标准 client.models.generateContent（通过 thinkingBudget=0 彻底关闭 CoT 思考延迟，实现秒级响应）
         try {
             val partAudio = Part.fromBytes(audioBytes, "audio/mp4")
             val partPrompt = Part.fromText(promptText)
             val content = TypesContent.fromParts(partPrompt, partAudio)
 
-            val response = client.models.generateContent(modelName, listOf(content), null)
-            val generatedText = response.text()
-            if (!generatedText.isNullOrBlank()) {
-                jsonResult = generatedText
+            val configBuilder = GenerateContentConfig.builder()
+                .temperature(0.1f)
+
+            if (thinkingBudget >= 0) {
+                configBuilder.thinkingConfig(
+                    ThinkingConfig.builder()
+                        .thinkingBudget(thinkingBudget)
+                        .build()
+                )
+            }
+
+            val response = client.models.generateContent(modelName, listOf(content), configBuilder.build())
+            val text = response.text()
+            if (!text.isNullOrBlank()) {
+                jsonResult = text
             }
         } catch (e: Exception) {
             lastError = e
-            e.printStackTrace()
+            // 若模型不支持 thinkingConfig，尝试无 config 降级调用
+            try {
+                val partAudio = Part.fromBytes(audioBytes, "audio/mp4")
+                val partPrompt = Part.fromText(promptText)
+                val content = TypesContent.fromParts(partPrompt, partAudio)
+                val fallbackResponse = client.models.generateContent(modelName, listOf(content), null)
+                val text = fallbackResponse.text()
+                if (!text.isNullOrBlank()) {
+                    jsonResult = text
+                }
+            } catch (ex: Exception) {
+                lastError = ex
+            }
         }
 
-        // 策略 2：若策略 1 未返回或报错，回退到 client.interactions.create (并深度提取 outputText 与 steps)
+        // 策略 2：回退到 client.interactions
         if (jsonResult.isBlank()) {
             try {
                 val base64Audio = Base64.getEncoder().encodeToString(audioBytes)
@@ -90,8 +122,6 @@ class GeminiService(
                 val interaction = response.interaction().orElse(null)
                 if (interaction != null) {
                     var extracted = interaction.outputText().orElse("")
-
-                    // 若 outputText 为空，从 ModelOutputStep 中提取 TextContent
                     if (extracted.isBlank()) {
                         interaction.steps().ifPresent { stepList ->
                             val sb = StringBuilder()
@@ -109,29 +139,23 @@ class GeminiService(
                             extracted = sb.toString()
                         }
                     }
-
                     if (extracted.isNotBlank()) {
                         jsonResult = extracted
-                    } else {
-                        // 提取可能存在的错误信息
-                        interaction.errors().ifPresent { errorList ->
-                            if (errorList.isNotEmpty()) {
-                                val errStr = errorList.joinToString("; ") { it.toString() }
-                                throw IllegalStateException("Gemini Interaction 报错: $errStr")
-                            }
-                        }
                     }
                 }
             } catch (e: Exception) {
                 if (lastError == null) lastError = e
-                e.printStackTrace()
             }
         }
 
+        val elapsed = System.currentTimeMillis() - startTime
+
         if (jsonResult.isBlank()) {
             val errorMsg = lastError?.message ?: "模型响应为空"
-            throw IllegalStateException("AI 未返回有效内容: $errorMsg (请确认 API Key 是否正确及网络可用)")
+            throw IllegalStateException("AI 未返回有效内容 (耗时 ${elapsed}ms): $errorMsg")
         }
+
+        onProgress("⚡ Gemini 响应完成，总耗时: ${elapsed}ms")
 
         parseJsonToBills(jsonResult, currentDateTime)
     }
@@ -139,12 +163,17 @@ class GeminiService(
     /**
      * 解析纯自然语言文本中的账单
      */
-    suspend fun parseText(textPrompt: String): List<BillItem> = withContext(Dispatchers.IO) {
+    suspend fun parseText(
+        textPrompt: String,
+        onProgress: (String) -> Unit = {}
+    ): List<BillItem> = withContext(Dispatchers.IO) {
         val client = getClient()
         val currentDateTime = getCurrentDateTimeString()
         val fullPrompt = "${buildPrompt(currentDateTime)}\n\n用户文本输入内容：$textPrompt"
         val modelName = prefs.geminiModel.ifBlank { PreferencesManager.DEFAULT_MODEL }
+        val thinkingBudget = prefs.thinkingBudget
 
+        val startTime = System.currentTimeMillis()
         var jsonResult = ""
         var lastError: Exception? = null
 
@@ -152,14 +181,36 @@ class GeminiService(
         try {
             val partPrompt = Part.fromText(fullPrompt)
             val content = TypesContent.fromParts(partPrompt)
-            val response = client.models.generateContent(modelName, listOf(content), null)
-            val generatedText = response.text()
-            if (!generatedText.isNullOrBlank()) {
-                jsonResult = generatedText
+
+            val configBuilder = GenerateContentConfig.builder()
+                .temperature(0.1f)
+
+            if (thinkingBudget >= 0) {
+                configBuilder.thinkingConfig(
+                    ThinkingConfig.builder()
+                        .thinkingBudget(thinkingBudget)
+                        .build()
+                )
+            }
+
+            val response = client.models.generateContent(modelName, listOf(content), configBuilder.build())
+            val text = response.text()
+            if (!text.isNullOrBlank()) {
+                jsonResult = text
             }
         } catch (e: Exception) {
             lastError = e
-            e.printStackTrace()
+            try {
+                val partPrompt = Part.fromText(fullPrompt)
+                val content = TypesContent.fromParts(partPrompt)
+                val fallbackResponse = client.models.generateContent(modelName, listOf(content), null)
+                val text = fallbackResponse.text()
+                if (!text.isNullOrBlank()) {
+                    jsonResult = text
+                }
+            } catch (ex: Exception) {
+                lastError = ex
+            }
         }
 
         // 策略 2: client.interactions.create
@@ -198,14 +249,17 @@ class GeminiService(
                 }
             } catch (e: Exception) {
                 if (lastError == null) lastError = e
-                e.printStackTrace()
             }
         }
 
+        val elapsed = System.currentTimeMillis() - startTime
+
         if (jsonResult.isBlank()) {
             val errorMsg = lastError?.message ?: "模型响应为空"
-            throw IllegalStateException("AI 未返回有效内容: $errorMsg (请确认 API Key 是否正确及网络可用)")
+            throw IllegalStateException("AI 未返回有效内容 (耗时 ${elapsed}ms): $errorMsg")
         }
+
+        onProgress("⚡ Gemini 响应完成，总耗时: ${elapsed}ms")
 
         parseJsonToBills(jsonResult, currentDateTime)
     }
@@ -322,7 +376,6 @@ $bookRule
                 time = if (item.time.isNullOrBlank()) defaultTime else item.time,
                 bookname = if (item.bookname.isNullOrBlank()) prefs.defaultBook.ifBlank { PreferencesManager.DEFAULT_BOOK } else item.bookname,
                 catename = if (item.catename.isNullOrBlank()) "其它" else item.catename,
-                // 仅当用户明确配置了账户或原有账户非空时才保留，否则遵从用户指示默认不留账户
                 accountname = if (prefs.accounts.isBlank()) item.accountname?.takeIf { it.isNotBlank() } else (item.accountname ?: prefs.accounts.split(",", "\n").firstOrNull())
             )
         }
