@@ -58,7 +58,10 @@ class GeminiService(
         val thinkingBudget = prefs.thinkingBudget
         val audioBytes = audioFile.readBytes()
 
-        onProgress("📤 正在上传音频 (${audioBytes.size / 1024} KB)，请求 Gemini ($modelName, 思考预算: $thinkingBudget)...")
+        val requestTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        val audioKb = String.format(Locale.US, "%.1f", audioBytes.size / 1024.0)
+        onProgress("🛫 [AI 请求] 时间戳: $requestTime | 模型: $modelName | 思考预算: $thinkingBudget")
+        onProgress("📦 [载荷数据] 录音音频: ${audioKb} KB (${audioFile.name}) [已过滤Base64数据]")
         val startTime = System.currentTimeMillis()
 
         var jsonResult = ""
@@ -154,9 +157,10 @@ class GeminiService(
             throw IllegalStateException("AI 未返回有效内容 (耗时 ${elapsed}ms): $errorMsg")
         }
 
-        onProgress("⚡ Gemini 响应完成，总耗时: ${elapsed}ms")
+        onProgress("⏱️ [AI 处理耗时] ${elapsed}ms")
+        onProgress("📥 [AI 原始响应]:\n$jsonResult")
 
-        parseJsonToBills(jsonResult, currentDateTime)
+        parseJsonToBills(jsonResult, currentDateTime, onProgress)
     }
 
     /**
@@ -171,6 +175,10 @@ class GeminiService(
         val fullPrompt = "${buildPrompt(currentDateTime)}\n\n用户文本输入内容：$textPrompt"
         val modelName = prefs.geminiModel.ifBlank { PreferencesManager.DEFAULT_MODEL }
         val thinkingBudget = prefs.thinkingBudget
+
+        val requestTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        onProgress("🛫 [AI 请求] 时间戳: $requestTime | 模型: $modelName | 思考预算: $thinkingBudget")
+        onProgress("📦 [载荷数据] 文本输入: \"$textPrompt\"")
 
         val startTime = System.currentTimeMillis()
         var jsonResult = ""
@@ -258,9 +266,10 @@ class GeminiService(
             throw IllegalStateException("AI 未返回有效内容 (耗时 ${elapsed}ms): $errorMsg")
         }
 
-        onProgress("⚡ Gemini 响应完成，总耗时: ${elapsed}ms")
+        onProgress("⏱️ [AI 处理耗时] ${elapsed}ms")
+        onProgress("📥 [AI 原始响应]:\n$jsonResult")
 
-        parseJsonToBills(jsonResult, currentDateTime)
+        parseJsonToBills(jsonResult, currentDateTime, onProgress)
     }
 
     private fun getCurrentDateTimeString(): String {
@@ -331,7 +340,11 @@ $bookRule
     /**
      * 将 Gemini 返回的文本解析清洗为 BillItem 列表
      */
-    fun parseJsonToBills(rawText: String, defaultTime: String): List<BillItem> {
+    fun parseJsonToBills(
+        rawText: String,
+        defaultTime: String,
+        onProgress: (String) -> Unit = {}
+    ): List<BillItem> {
         var clean = rawText.trim()
         if (clean.startsWith("```json")) {
             clean = clean.removePrefix("```json").trim()
@@ -367,6 +380,9 @@ $bookRule
             throw IllegalStateException("未从 AI 回复中匹配到有效的 JSON 结构: $clean")
         }
 
+        val extractedJsonStr = jsonArray.toString(2)
+        onProgress("📄 [提取的 JSON 结构]:\n$extractedJsonStr")
+
         val type = object : TypeToken<List<BillItem>>() {}.type
         val list: List<BillItem> = gson.fromJson(jsonArray.toString(), type)
 
@@ -376,7 +392,7 @@ $bookRule
             throw IllegalStateException("未检测到有效消费金额（钱迹要求金额必须大于0），请在语音中说明花费金额，例如：'吃午餐花了25元'")
         }
 
-        return validList.map { item ->
+        val mappedList = validList.map { item ->
             item.copy(
                 time = if (item.time.isNullOrBlank()) defaultTime else item.time,
                 bookname = if (item.bookname.isNullOrBlank()) prefs.defaultBook.ifBlank { PreferencesManager.DEFAULT_BOOK } else item.bookname,
@@ -384,5 +400,10 @@ $bookRule
                 accountname = if (prefs.accounts.isBlank()) item.accountname?.takeIf { it.isNotBlank() } else (item.accountname ?: prefs.accounts.split(",", "\n").firstOrNull())
             )
         }
+
+        val billSummaries = mappedList.joinToString("\n") { "  • ${it.summary()}" }
+        onProgress("✨ [结构化账单已生成 (${mappedList.size}笔)]:\n$billSummaries")
+
+        return mappedList
     }
 }

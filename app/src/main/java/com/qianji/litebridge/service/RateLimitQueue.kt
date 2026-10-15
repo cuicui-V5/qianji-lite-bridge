@@ -61,11 +61,12 @@ class RateLimitQueue(
             while (isActive) {
                 val bill = channel.receive()
                 try {
-                    onLog("⏳ 准备派发: ${bill.summary()}")
+                    val uri = QianjiLauncher.buildUri(bill)
+                    onLog("🔗 [钱迹 URL Scheme]:\n$uri")
                     val shouldAutoReturn = bill.autoReturn && prefs.autoReturn
                     val success = QianjiLauncher.launch(context, bill, autoReturn = shouldAutoReturn)
                     if (success) {
-                        onLog("✅ 已唤起钱迹记账: ${bill.summary()}${if (shouldAutoReturn) " (随后自动切回本网关)" else " (保留在当前应用)"}")
+                        onLog("✅ 已成功唤起钱迹保存: ${bill.summary()}${if (shouldAutoReturn) " (随后自动切回本网关)" else " (保留在当前应用)"}")
                     } else {
                         onLog("❌ 唤起钱迹失败 (未找到钱迹App或权限受限): ${bill.summary()}")
                     }

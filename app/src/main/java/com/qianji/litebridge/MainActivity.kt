@@ -4,11 +4,28 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.qianji.litebridge.service.FloatingCapsuleService
+import com.qianji.litebridge.ui.DebugScreen
 import com.qianji.litebridge.ui.MainScreen
 import com.qianji.litebridge.ui.theme.QianjiLiteBridgeTheme
 import com.qianji.litebridge.util.NetworkUtils
+
+enum class AppScreen {
+    MAIN,
+    DEBUG
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -32,16 +49,52 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             QianjiLiteBridgeTheme {
-                MainScreen(
-                    ipAddress = localIp,
-                    port = port,
-                    queue = app.queue,
-                    geminiService = app.geminiService,
-                    prefs = app.prefs,
-                    logs = app.logs,
-                    onClearLogs = { app.logs.clear() },
-                    onAddLog = { message -> app.addLog(message) }
-                )
+                var currentScreen by remember { mutableStateOf(AppScreen.MAIN) }
+
+                // 系统物理返回键 / 手势返回监听：在调试页面时返回主页面
+                BackHandler(enabled = currentScreen == AppScreen.DEBUG) {
+                    currentScreen = AppScreen.MAIN
+                }
+
+                AnimatedContent(
+                    targetState = currentScreen,
+                    transitionSpec = {
+                        if (targetState == AppScreen.DEBUG) {
+                            (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
+                                slideOutHorizontally { width -> -width / 3 } + fadeOut()
+                            )
+                        } else {
+                            (slideInHorizontally { width -> -width / 3 } + fadeIn()).togetherWith(
+                                slideOutHorizontally { width -> width } + fadeOut()
+                            )
+                        }
+                    },
+                    label = "ScreenTransition"
+                ) { screen ->
+                    when (screen) {
+                        AppScreen.MAIN -> {
+                            MainScreen(
+                                onNavigateToSettings = { currentScreen = AppScreen.DEBUG },
+                                prefs = app.prefs,
+                                queue = app.queue,
+                                geminiService = app.geminiService,
+                                onAddLog = { message -> app.addLog(message) }
+                            )
+                        }
+
+                        AppScreen.DEBUG -> {
+                            DebugScreen(
+                                ipAddress = localIp,
+                                port = port,
+                                queue = app.queue,
+                                prefs = app.prefs,
+                                logs = app.logs,
+                                onClearLogs = { app.logs.clear() },
+                                onNavigateBack = { currentScreen = AppScreen.MAIN }
+                            )
+                        }
+                    }
+                }
             }
         }
     }

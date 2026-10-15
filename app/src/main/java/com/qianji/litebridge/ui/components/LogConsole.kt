@@ -1,5 +1,9 @@
 package com.qianji.litebridge.ui.components
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,11 +14,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Card
@@ -29,7 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.qianji.litebridge.ui.theme.PrimaryBlue
@@ -42,6 +50,7 @@ fun LogConsole(
     onClearLogs: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val listState = rememberLazyListState()
 
     // 自动滚动到最新日志
@@ -49,6 +58,18 @@ fun LogConsole(
         if (logs.isNotEmpty()) {
             listState.animateScrollToItem(logs.size - 1)
         }
+    }
+
+    fun copyAllLogs() {
+        if (logs.isEmpty()) {
+            Toast.makeText(context, "当前日志为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val fullLogText = logs.joinToString("\n\n")
+        val clip = ClipData.newPlainText("钱迹网关详细日志", fullLogText)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(context, "已成功复制全部详细日志 (${logs.size} 条)", Toast.LENGTH_SHORT).show()
     }
 
     Card(
@@ -64,7 +85,7 @@ fun LogConsole(
                 .fillMaxWidth()
                 .padding(14.dp)
         ) {
-            // 控制台标题栏
+            // 控制台标题栏与快捷动作
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -77,45 +98,64 @@ fun LogConsole(
                         tint = PrimaryBlue,
                         modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.size(6.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "实时网关日志 (${logs.size})",
+                        text = "实时网关调试日志 (${logs.size})",
                         style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
-                IconButton(
-                    onClick = onClearLogs,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteSweep,
-                        contentDescription = "清空日志",
-                        tint = Color.Gray,
-                        modifier = Modifier.size(18.dp)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 一键复制全部日志按钮
+                    IconButton(
+                        onClick = { copyAllLogs() },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "一键复制全部日志",
+                            tint = PrimaryBlue,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // 清空日志按钮
+                    IconButton(
+                        onClick = onClearLogs,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = "清空日志",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 仿终端日志框
+            // 终端日志框
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f, fill = false)
-                    .height(200.dp)
+                    .height(280.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(TerminalBackground)
                     .padding(8.dp)
             ) {
                 if (logs.isEmpty()) {
                     Text(
-                        text = "等待请求接入中...\n- 长按下方按钮开始语音记账\n- 或通过局域网 HTTP POST 提交账单",
+                        text = "等待请求接入中...\n• 长按悬浮窗或主界面麦克风开始语音记账\n• 通过局域网 HTTP POST 提交账单\n• 点击右上角可一键复制全部请求与响应数据",
                         color = Color.Gray,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
+                        lineHeight = 18.sp,
                         modifier = Modifier.padding(8.dp)
                     )
                 } else {
@@ -126,10 +166,17 @@ fun LogConsole(
                         items(logs) { log ->
                             Text(
                                 text = log,
-                                color = TerminalText,
+                                color = when {
+                                    log.contains("❌") -> Color(0xFFF87171)
+                                    log.contains("⚠️") -> Color(0xFFFBBF24)
+                                    log.contains("✅") || log.contains("✨") -> Color(0xFF4ADE80)
+                                    log.contains("🛫") || log.contains("🔗") -> Color(0xFF60A5FA)
+                                    log.contains("📄") || log.contains("📥") -> Color(0xFFA78BFA)
+                                    else -> TerminalText
+                                },
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.5.sp,
-                                lineHeight = 16.sp,
+                                lineHeight = 16.5.sp,
                                 modifier = Modifier.padding(vertical = 2.dp)
                             )
                         }

@@ -1,97 +1,112 @@
 package com.qianji.litebridge.ui
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.qianji.litebridge.service.GeminiService
 import com.qianji.litebridge.service.RateLimitQueue
 import com.qianji.litebridge.ui.components.FloatingCapsuleCard
 import com.qianji.litebridge.ui.components.HoldToSpeakButton
-import com.qianji.litebridge.ui.components.LogConsole
-import com.qianji.litebridge.ui.components.SettingsCard
-import com.qianji.litebridge.ui.components.StatusCard
 import com.qianji.litebridge.util.PreferencesManager
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    ipAddress: String,
-    port: Int,
+    onNavigateToSettings: () -> Unit,
+    prefs: PreferencesManager,
     queue: RateLimitQueue,
     geminiService: GeminiService,
-    prefs: PreferencesManager,
-    logs: List<String>,
-    onClearLogs: () -> Unit,
-    onAddLog: (String) -> Unit
+    onAddLog: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val queueSize by queue.queueSize.collectAsState()
-    val scrollState = rememberScrollState()
-
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "钱迹 AI 语音记账",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                },
+                actions = {
+                    // 主界面只保留的核心控件之一：设置/调试按钮
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "设置与调试界面",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
+                )
+            )
+        },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .verticalScroll(scrollState)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. 顶部状态卡片 (IP, 端口, 队列计数)
-            StatusCard(
-                ipAddress = ipAddress,
-                port = port,
-                queueSize = queueSize
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 1.5 全局桌面悬浮胶囊控制卡片 (一键开启/关闭)
+            // 主界面核心控件之二：打开悬浮窗模式按钮卡片
             FloatingCapsuleCard(
-                prefs = prefs
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 2. 可折叠配置区 (输入即刻自动保存，亦可点击下方按钮收起)
-            SettingsCard(
-                prefs = prefs
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 3. 中部实时日志控制台 (固定高度，自适应滑动)
-            LogConsole(
-                logs = logs,
-                onClearLogs = onClearLogs,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 4. 底部超大交互区：按住说话记账
-            HoldToSpeakButton(
-                geminiService = geminiService,
-                queue = queue,
-                onLog = onAddLog,
+                prefs = prefs,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 主界面核心控件之三：最主要的录音大按钮
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                HoldToSpeakButton(
+                    geminiService = geminiService,
+                    queue = queue,
+                    onLog = onAddLog,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "按住大按钮说话记账 · 或点击右上角进入设置与调试",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    fontSize = 12.sp
+                )
+            }
         }
     }
 }
