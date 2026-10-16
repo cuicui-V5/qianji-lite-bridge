@@ -14,6 +14,5 @@
                 android:name="action_quick_record"
                 android:value="true" />
         </intent>
-        <categories android:name="android.shortcut.conversation" />
     </shortcut>
 </shortcuts>
