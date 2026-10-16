@@ -42,6 +42,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,10 +65,10 @@ import com.qianji.litebridge.util.PreferencesManager
 @Composable
 fun SettingsCard(
     prefs: PreferencesManager,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onRegisterSave: (((Boolean) -> Unit) -> Unit)? = null
 ) {
     val context = LocalContext.current
-    var isExpanded by remember { mutableStateOf(false) }
     var showAutoSavedHint by remember { mutableStateOf(false) }
 
     // 1. AI 提供商
@@ -135,78 +136,20 @@ fun SettingsCard(
         }
     }
 
-    Card(
+    LaunchedEffect(Unit) {
+        onRegisterSave?.invoke { showToast ->
+            saveAll(showToast)
+        }
+    }
+
+    Column(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            // 折叠控制标题栏
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isExpanded = !isExpanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "设置",
-                        tint = PrimaryBlue,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "服务与模型配置",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (showAutoSavedHint) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "已自动保存",
-                            tint = SuccessGreen,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "已自动保存",
-                            fontSize = 11.sp,
-                            color = SuccessGreen
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (isExpanded) "折叠" else "展开",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 可折叠内容区
-            AnimatedVisibility(visible = isExpanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp)
-                ) {
-                    // ==========================================
-                    // 分区 1：AI 账单解析模型 (LLM)
-                    // ==========================================
-                    SectionCard(
+        // ==========================================
+        // 分区 1：AI 账单解析模型 (LLM)
+        // ==========================================
+        SectionCard(
                         icon = Icons.Default.Psychology,
                         title = "AI 账单提取大模型",
                         subtitle = "负责理解语义并结构化输出记账参数"
@@ -388,53 +331,67 @@ fun SettingsCard(
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // 2x2 网格，杜绝横向挤压和显示错位
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                FilterChip(
+                                ProviderTab(
+                                    title = "关 (极速直出)",
                                     selected = customAiThinkingMode == "disabled",
                                     onClick = {
                                         customAiThinkingMode = "disabled"
                                         saveAll(showToast = false)
                                     },
-                                    label = { Text("关 (极速)", fontSize = 11.sp) }
+                                    modifier = Modifier.weight(1f)
                                 )
-                                FilterChip(
+                                ProviderTab(
+                                    title = "低 (Low 推荐)",
                                     selected = customAiThinkingMode == "low",
                                     onClick = {
                                         customAiThinkingMode = "low"
                                         saveAll(showToast = false)
                                     },
-                                    label = { Text("低 (Low)", fontSize = 11.sp) }
+                                    modifier = Modifier.weight(1f)
                                 )
-                                FilterChip(
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ProviderTab(
+                                    title = "高 (High 深度)",
                                     selected = customAiThinkingMode == "high",
                                     onClick = {
                                         customAiThinkingMode = "high"
                                         saveAll(showToast = false)
                                     },
-                                    label = { Text("高 (High)", fontSize = 11.sp) }
+                                    modifier = Modifier.weight(1f)
                                 )
-                                FilterChip(
+                                ProviderTab(
+                                    title = "自动 (默认智能)",
                                     selected = customAiThinkingMode == "auto",
                                     onClick = {
                                         customAiThinkingMode = "auto"
                                         saveAll(showToast = false)
                                     },
-                                    label = { Text("自动 (默认)", fontSize = 11.sp) }
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
 
                             if (customAiThinkingMode == "auto") {
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                        .padding(10.dp)
+                                        .padding(12.dp)
                                 ) {
                                     Text(
                                         text = "🪄 自动推理策略：短文本极速直出，长文本开启推理",
@@ -442,54 +399,53 @@ fun SettingsCard(
                                         fontWeight = FontWeight.Bold,
                                         color = PrimaryBlue
                                     )
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = customAiAutoThresholdText,
+                                        onValueChange = {
+                                            customAiAutoThresholdText = it.filter { c -> c.isDigit() }
+                                            saveAll(showToast = false)
+                                        },
+                                        label = { Text("字数阈值 (字)") },
+                                        placeholder = { Text("20") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "超过阈值时的思考强度：",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        OutlinedTextField(
-                                            value = customAiAutoThresholdText,
-                                            onValueChange = {
-                                                customAiAutoThresholdText = it.filter { c -> c.isDigit() }
+                                        ProviderTab(
+                                            title = "Low (推荐，轻度思考)",
+                                            selected = customAiAutoEffort == "low",
+                                            onClick = {
+                                                customAiAutoEffort = "low"
                                                 saveAll(showToast = false)
                                             },
-                                            label = { Text("字数阈值 (字)") },
-                                            placeholder = { Text("20") },
-                                            modifier = Modifier.weight(1f),
-                                            singleLine = true
+                                            modifier = Modifier.weight(1f)
                                         )
-
-                                        Column(modifier = Modifier.weight(1.2f)) {
-                                            Text(
-                                                text = "超阈值强度:",
-                                                fontSize = 11.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                FilterChip(
-                                                    selected = customAiAutoEffort == "low",
-                                                    onClick = {
-                                                        customAiAutoEffort = "low"
-                                                        saveAll(showToast = false)
-                                                    },
-                                                    label = { Text("Low", fontSize = 10.sp) }
-                                                )
-                                                FilterChip(
-                                                    selected = customAiAutoEffort == "high",
-                                                    onClick = {
-                                                        customAiAutoEffort = "high"
-                                                        saveAll(showToast = false)
-                                                    },
-                                                    label = { Text("High", fontSize = 10.sp) }
-                                                )
-                                            }
-                                        }
+                                        ProviderTab(
+                                            title = "High (深度思考)",
+                                            selected = customAiAutoEffort == "high",
+                                            onClick = {
+                                                customAiAutoEffort = "high"
+                                                saveAll(showToast = false)
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        )
                                     }
-                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "规则：<= ${customAiAutoThresholdText.ifBlank { "20" }} 字不开启推理 (极速直出)；> ${customAiAutoThresholdText.ifBlank { "20" }} 字自动启用 ${customAiAutoEffort.uppercase()} 推理 (增强多账单理解)。",
-                                        fontSize = 10.sp,
+                                        text = "规则说明：语音转录 <= ${customAiAutoThresholdText.ifBlank { "20" }} 字时直接关闭思考 (极速秒级直出)；> ${customAiAutoThresholdText.ifBlank { "20" }} 字时自动启用 ${customAiAutoEffort.uppercase()} 推理 (增强长句及多笔账单理解)。",
+                                        fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -811,24 +767,20 @@ fun SettingsCard(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-                    // 保存并收起按钮
-                    Button(
-                        onClick = {
-                            saveAll(showToast = true)
-                            isExpanded = false
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
-                    ) {
-                        Icon(imageVector = Icons.Default.Save, contentDescription = "保存")
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("保存并收起设置", fontSize = 15.sp)
-                    }
-                }
-            }
+        // 底部保存按钮 (方便滑到底部时直接保存)
+        Button(
+            onClick = {
+                saveAll(showToast = true)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+        ) {
+            Icon(imageVector = Icons.Default.Save, contentDescription = "保存所有配置")
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("保存所有配置", fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
