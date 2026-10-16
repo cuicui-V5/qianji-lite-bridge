@@ -46,6 +46,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.qianji.litebridge.audio.SystemSpeechRecognizer
+import com.qianji.litebridge.ui.theme.DangerRed
 import com.qianji.litebridge.ui.theme.PrimaryBlue
 import com.qianji.litebridge.ui.theme.SuccessGreen
 import com.qianji.litebridge.util.PreferencesManager
@@ -213,41 +215,59 @@ fun SettingsCard(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // 语音输入与解析模式切换 (系统ASR转文字 vs 原生多模态直接上传)
-                    Row(
+                    val speechRecognizer = remember { SystemSpeechRecognizer(context) }
+                    val diag = remember { speechRecognizer.diagnose() }
+
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = if (asrModeEnabled) "语音模式：系统语音转文字 (推荐·极速)" else "语音模式：原生多模态直接上传",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = if (asrModeEnabled) SuccessGreen else MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = if (asrModeEnabled)
-                                    "开启：优先由系统秒级将语音转为文字，再发送给 AI 解析（响应只需 1~2 秒）"
-                                else
-                                    "关闭：直接将录音音频文件多模态上传至 Gemini（需等待音频特征编码，耗时约 10 秒）",
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (asrModeEnabled) "语音模式：系统语音转文字 (推荐·极速)" else "语音模式：原生多模态直接上传",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (asrModeEnabled) SuccessGreen else MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (asrModeEnabled)
+                                        "开启：优先由系统秒级将语音转为文字，再发送给 AI 解析（响应只需 1~2 秒）"
+                                    else
+                                        "关闭：直接将录音音频文件多模态上传至 Gemini（需等待音频特征编码，耗时约 10 秒）",
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Switch(
+                                checked = asrModeEnabled,
+                                onCheckedChange = {
+                                    asrModeEnabled = it
+                                    prefs.asrModeEnabled = it
+                                    saveAll(showToast = false)
+                                }
                             )
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Switch(
-                            checked = asrModeEnabled,
-                            onCheckedChange = {
-                                asrModeEnabled = it
-                                prefs.asrModeEnabled = it
-                                saveAll(showToast = false)
-                            }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (diag.isAvailable)
+                                "🔍 识别引擎状态：${diag.summaryText}"
+                            else
+                                "⚠️ 未检测到系统 RecognitionService 引擎 (国行三星请检查: 设置->常规管理->键盘列表和默认键盘->语音输入)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (diag.isAvailable) SuccessGreen else DangerRed
                         )
                     }
 

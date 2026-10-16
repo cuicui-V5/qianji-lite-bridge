@@ -182,11 +182,17 @@ fun HoldToSpeakButton(
         pressStartTime = System.currentTimeMillis()
         liveSpeechText = ""
 
-        val useAsr = prefs.asrModeEnabled && speechRecognizer.isAvailable()
+        val diag = speechRecognizer.diagnose()
+        val useAsr = prefs.asrModeEnabled && diag.isAvailable
+
+        if (prefs.asrModeEnabled && !diag.isAvailable) {
+            onLog("⚠️ [语音识别降级] 未检测到系统 RecognitionService 引擎，自动切回原生多模态录音")
+            onLog("💡 [三星 One UI 提示] 请前往「设置 -> 常规管理 -> 键盘列表和默认键盘 -> 语音输入」检查是否启用了三星/Google语音输入")
+        }
 
         if (useAsr) {
             recordState = RecordState.RECORDING
-            onLog("🎙️ [系统语音识别] 开始倾听，按住说话...")
+            onLog("🎙️ [系统语音识别] 启动引擎: ${diag.summaryText}，按住说话...")
             speechRecognizer.startListening(
                 onPartial = { partial ->
                     liveSpeechText = partial
@@ -371,8 +377,13 @@ fun HoldToSpeakButton(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
+                        val diag = remember { speechRecognizer.diagnose() }
                         Text(
-                            text = if (prefs.asrModeEnabled) "系统极速识别 · 秒级响应" else "原生多模态直传 · 耗时约10秒",
+                            text = if (prefs.asrModeEnabled) {
+                                if (diag.isAvailable) "系统极速识别 · 秒级响应" else "未检测到引擎 · 将自动切多模态"
+                            } else {
+                                "原生多模态直传 · 音频多模态"
+                            },
                             color = Color.White.copy(alpha = 0.8f),
                             fontSize = 13.sp
                         )

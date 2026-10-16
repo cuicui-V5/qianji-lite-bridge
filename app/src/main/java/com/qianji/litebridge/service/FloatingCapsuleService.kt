@@ -358,9 +358,16 @@ class FloatingCapsuleService : Service() {
             wakeLock?.acquire(60_000) // 最长持有 60 秒唤醒锁，防止锁屏或休眠切断麦克风
         } catch (_: Exception) {}
 
-        val useAsr = app.prefs.asrModeEnabled && (speechRecognizer?.isAvailable() == true)
+        val diag = speechRecognizer?.diagnose()
+        val useAsr = app.prefs.asrModeEnabled && (diag?.isAvailable == true)
+
+        if (app.prefs.asrModeEnabled && diag?.isAvailable != true) {
+            app.addLog("⚠️ [悬浮胶囊降级] 未检测到系统 RecognitionService 语音引擎，自动切回原生多模态录音")
+            app.addLog("💡 [三星 One UI 提示] 请前往「设置 -> 常规管理 -> 键盘列表和默认键盘 -> 语音输入」检查")
+        }
+
         if (useAsr) {
-            app.addLog("🎙️ [悬浮胶囊] 启动系统语音识别，按住说话...")
+            app.addLog("🎙️ [悬浮胶囊] 启动引擎: ${diag?.summaryText ?: "系统语音"}，按住说话...")
             updateCapsuleStyle(CapsuleState.RECORDING, "🔴", "倾听中...")
 
             speechRecognizer?.startListening(
