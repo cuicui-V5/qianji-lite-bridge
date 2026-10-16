@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">钱迹网关</string>
+    <string name="shortcut_quick_record_short">快速语音记账</string>
+    <string name="shortcut_quick_record_long">快速语音记账</string>
 </resources>

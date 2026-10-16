@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="quick_voice_record"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_mic"
+        android:shortcutShortLabel="@string/shortcut_quick_record_short"
+        android:shortcutLongLabel="@string/shortcut_quick_record_long">
+        <intent
+            android:action="com.qianji.litebridge.ACTION_QUICK_RECORD"
+            android:targetPackage="com.qianji.litebridge"
+            android:targetClass="com.qianji.litebridge.MainActivity">
+            <extra
+                android:name="action_quick_record"
+                android:value="true" />
+        </intent>
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+</shortcuts>

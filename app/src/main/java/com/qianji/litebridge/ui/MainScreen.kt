@@ -59,7 +59,9 @@ fun MainScreen(
     queue: RateLimitQueue,
     geminiService: GeminiService,
     onAddLog: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    quickRecordTrigger: Boolean = false,
+    onQuickRecordHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val isFloatingRunning by FloatingCapsuleService.isRunning
@@ -200,6 +202,8 @@ fun MainScreen(
                     queue = queue,
                     prefs = prefs,
                     onLog = onAddLog,
+                    quickRecordTrigger = quickRecordTrigger,
+                    onQuickRecordHandled = onQuickRecordHandled,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(260.dp)

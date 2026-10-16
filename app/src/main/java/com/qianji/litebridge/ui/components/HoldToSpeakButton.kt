@@ -36,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -76,7 +77,9 @@ fun HoldToSpeakButton(
     queue: RateLimitQueue,
     prefs: PreferencesManager,
     onLog: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    quickRecordTrigger: Boolean = false,
+    onQuickRecordHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -85,6 +88,8 @@ fun HoldToSpeakButton(
     var pressStartTime by remember { mutableLongStateOf(0L) }
     var currentRecordFile by remember { mutableStateOf<File?>(null) }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var isTapToStopMode by remember { mutableStateOf(false) }
+    var pendingAutoRecordAfterPermission by remember { mutableStateOf(false) }
 
     // 录音权限检查
     var hasAudioPermission by remember {
@@ -100,7 +105,13 @@ fun HoldToSpeakButton(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         hasAudioPermission = isGranted
-        if (!isGranted) {
+        if (isGranted) {
+            if (pendingAutoRecordAfterPermission) {
+                pendingAutoRecordAfterPermission = false
+                isTapToStopMode = true
+            }
+        } else {
+            pendingAutoRecordAfterPermission = false
             Toast.makeText(context, "需要录音权限以支持语音记账", Toast.LENGTH_SHORT).show()
         }
     }
@@ -161,11 +172,29 @@ fun HoldToSpeakButton(
             val aiName = if (prefs.aiProvider == "custom") "自定义AI" else "Gemini"
             val asrName = if (prefs.asrProvider == "baidu") "百度语音" else "Gemini转写"
             val modeDesc = if (prefs.aiProvider == "custom" || prefs.asrModeEnabled) "$asrName + $aiName" else "Gemini原生多模态"
-            onLog("🎙️ [$modeDesc] 开始录音，按住说话...")
+            onLog("🎙️ [$modeDesc] 开始录音，按住或点击记账...")
         } catch (e: Exception) {
             recordState = RecordState.IDLE
+            isTapToStopMode = false
             onLog("❌ 启动录音失败: ${e.message}")
             e.printStackTrace()
+        }
+    }
+
+    // 快捷方式呼起时自动进入录音状态
+    LaunchedEffect(quickRecordTrigger) {
+        if (quickRecordTrigger) {
+            onQuickRecordHandled()
+            if (recordState == RecordState.IDLE) {
+                if (hasAudioPermission) {
+                    isTapToStopMode = true
+                    startRecording()
+                    onLog("🎙️ [快捷记账] 已自动开启录音，正在倾听... 说完请轻触屏幕按钮结束并记账")
+                } else {
+                    pendingAutoRecordAfterPermission = true
+                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
         }
     }
 
@@ -186,12 +215,14 @@ fun HoldToSpeakButton(
             onLog("⚠️ 录音时间太短 (${duration}ms)，已自动忽略")
             file?.delete()
             recordState = RecordState.IDLE
+            isTapToStopMode = false
             return
         }
 
         if (file == null || !file.exists() || file.length() == 0L) {
             onLog("❌ 录音文件无效")
             recordState = RecordState.IDLE
+            isTapToStopMode = false
             return
         }
 
@@ -223,6 +254,7 @@ fun HoldToSpeakButton(
             } finally {
                 file.delete()
                 recordState = RecordState.IDLE
+                isTapToStopMode = false
             }
         }
     }
@@ -232,25 +264,36 @@ fun HoldToSpeakButton(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
-            .pointerInput(hasAudioPermission) {
+            .pointerInput(hasAudioPermission, isTapToStopMode, recordState) {
                 if (recordState == RecordState.PROCESSING) return@pointerInput
 
-                awaitEachGesture {
-                    awaitFirstDown()
-                    startRecording()
-
-                    val upOrCancel = waitForUpOrCancellation()
-                    if (upOrCancel != null) {
+                if (isTapToStopMode && recordState == RecordState.RECORDING) {
+                    // 点击模式：用户轻触即结束录音并触发解析
+                    awaitEachGesture {
+                        awaitFirstDown()
+                        waitForUpOrCancellation()
+                        isTapToStopMode = false
                         stopAndProcessRecording()
-                    } else {
-                        try {
-                            mediaRecorder?.stop()
-                            mediaRecorder?.release()
-                        } catch (_: Exception) {}
-                        mediaRecorder = null
-                        currentRecordFile?.delete()
-                        recordState = RecordState.IDLE
-                        onLog("⚠️ 录音手势已取消")
+                    }
+                } else {
+                    // 常规长按模式
+                    awaitEachGesture {
+                        awaitFirstDown()
+                        startRecording()
+
+                        val upOrCancel = waitForUpOrCancellation()
+                        if (upOrCancel != null) {
+                            stopAndProcessRecording()
+                        } else {
+                            try {
+                                mediaRecorder?.stop()
+                                mediaRecorder?.release()
+                            } catch (_: Exception) {}
+                            mediaRecorder = null
+                            currentRecordFile?.delete()
+                            recordState = RecordState.IDLE
+                            onLog("⚠️ 录音手势已取消")
+                        }
                     }
                 }
             },
@@ -324,11 +367,19 @@ fun HoldToSpeakButton(
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = if (prefs.asrModeEnabled) "请说话... 松开立即高速转写" else "正在录音中... 松开立即记账",
+                            text = if (isTapToStopMode) "🔴 正在倾听... 点击此区域结束" else if (prefs.asrModeEnabled) "请说话... 松开立即高速转写" else "正在录音中... 松开立即记账",
                             color = Color.White,
                             fontSize = 19.sp,
                             fontWeight = FontWeight.Bold
                         )
+                        if (isTapToStopMode) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "（说完后轻点屏幕即可开始识别）",
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 13.sp
+                            )
+                        }
                     }
 
                     RecordState.PROCESSING -> {

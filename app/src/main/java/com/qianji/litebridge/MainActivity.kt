@@ -1,5 +1,6 @@
 package com.qianji.litebridge
 
+import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
@@ -29,6 +30,9 @@ enum class AppScreen {
 
 class MainActivity : ComponentActivity() {
 
+    private var quickRecordTrigger by mutableStateOf(false)
+    private var requestedScreen by mutableStateOf(AppScreen.MAIN)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -47,9 +51,16 @@ class MainActivity : ComponentActivity() {
             FloatingCapsuleService.start(this)
         }
 
+        checkShortcutIntent(intent)
+
         setContent {
             QianjiLiteBridgeTheme {
-                var currentScreen by remember { mutableStateOf(AppScreen.MAIN) }
+                var currentScreen by remember { mutableStateOf(requestedScreen) }
+
+                // 如果有快捷意图打断，强制切回主页面
+                if (requestedScreen == AppScreen.MAIN && currentScreen != AppScreen.MAIN && quickRecordTrigger) {
+                    currentScreen = AppScreen.MAIN
+                }
 
                 // 系统物理返回键 / 手势返回监听：在调试页面时返回主页面
                 BackHandler(enabled = currentScreen == AppScreen.DEBUG) {
@@ -78,7 +89,9 @@ class MainActivity : ComponentActivity() {
                                 prefs = app.prefs,
                                 queue = app.queue,
                                 geminiService = app.geminiService,
-                                onAddLog = { message -> app.addLog(message) }
+                                onAddLog = { message -> app.addLog(message) },
+                                quickRecordTrigger = quickRecordTrigger,
+                                onQuickRecordHandled = { quickRecordTrigger = false }
                             )
                         }
 
@@ -96,6 +109,22 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        checkShortcutIntent(intent)
+    }
+
+    private fun checkShortcutIntent(intent: Intent?) {
+        if (intent == null) return
+        val isQuickRecord = intent.getBooleanExtra("action_quick_record", false) ||
+                intent.action == "com.qianji.litebridge.ACTION_QUICK_RECORD"
+        if (isQuickRecord) {
+            requestedScreen = AppScreen.MAIN
+            quickRecordTrigger = true
         }
     }
 }
