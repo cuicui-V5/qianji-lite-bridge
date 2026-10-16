@@ -22,6 +22,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Base64
 import java.util.Date
@@ -45,7 +48,130 @@ class GeminiService(
     }
 
     /**
-     * 解析录音音频文件中的账单
+     * 调用 Google 官方专用语音转录大模型 gemini-3.5-transcribe
+     * 将录音音频极速转写为规范化文本
+     */
+    suspend fun transcribeAudio(
+        audioFile: File,
+        onProgress: (String) -> Unit = {}
+    ): String = withContext(Dispatchers.IO) {
+        val apiKey = prefs.geminiApiKey.trim()
+        if (apiKey.isEmpty()) {
+            throw IllegalStateException("未配置 Gemini API Key，请在设置中配置！")
+        }
+
+        val audioBytes = audioFile.readBytes()
+        val audioKb = String.format(Locale.US, "%.1f", audioBytes.size / 1024.0)
+        val requestTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        onProgress("🛫 [Gemini ASR 请求] 时间戳: $requestTime | 模型: gemini-3.5-transcribe")
+        onProgress("📦 [载荷数据] 录音音频: ${audioKb} KB (${audioFile.name})")
+
+        val startTime = System.currentTimeMillis()
+        val base64Audio = Base64.getEncoder().encodeToString(audioBytes)
+
+        val payloadObj = JSONObject().apply {
+            put("model", "gemini-3.5-transcribe")
+            val inputArray = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("type", "audio")
+                    put("data", base64Audio)
+                    put("mime_type", "audio/mp4")
+                })
+            }
+            put("input", inputArray)
+
+            val genConfig = JSONObject().apply {
+                val transConfig = JSONObject().apply {
+                    put("mode", "smart") // 智能转写：去除填充词、标点规整、逆文本归一化
+                    put("language_codes", JSONArray().put("zh-CN"))
+                }
+                put("transcription_config", transConfig)
+            }
+            put("generation_config", genConfig)
+        }
+
+        val payloadString = payloadObj.toString()
+        val url = URL("https://generativelanguage.googleapis.com/v1beta/interactions?key=${URLEncoder.encode(apiKey, "UTF-8")}")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 15000
+            readTimeout = 30000
+            doInput = true
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("x-goog-api-key", apiKey)
+        }
+
+        val responseCode = try {
+            conn.outputStream.use { os ->
+                os.write(payloadString.toByteArray(Charsets.UTF_8))
+            }
+            conn.responseCode
+        } catch (e: Exception) {
+            val elapsed = System.currentTimeMillis() - startTime
+            throw IllegalStateException("连接 Gemini ASR 失败 (${elapsed}ms): ${e.message}", e)
+        }
+
+        val elapsed = System.currentTimeMillis() - startTime
+        val responseBody = if (responseCode in 200..299) {
+            conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } else {
+            val errText = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "HTTP $responseCode"
+            throw IllegalStateException("Gemini ASR 请求失败 (HTTP $responseCode, 耗时 ${elapsed}ms): $errText")
+        }
+
+        onProgress("⏱️ [Gemini ASR 耗时] ${elapsed}ms")
+
+        val rootObj = JSONObject(responseBody)
+        var transcribedText = ""
+
+        if (rootObj.has("output_text")) {
+            transcribedText = rootObj.optString("output_text")
+        }
+
+        if (transcribedText.isBlank() && rootObj.has("steps")) {
+            val steps = rootObj.optJSONArray("steps")
+            if (steps != null) {
+                val sb = StringBuilder()
+                for (i in 0 until steps.length()) {
+                    val step = steps.optJSONObject(i) ?: continue
+                    if (step.optString("type") == "model_output") {
+                        val contentArray = step.optJSONArray("content") ?: continue
+                        for (j in 0 until contentArray.length()) {
+                            val contentObj = contentArray.optJSONObject(j) ?: continue
+                            if (contentObj.optString("type") == "text") {
+                                sb.append(contentObj.optString("text"))
+                            }
+                        }
+                    }
+                }
+                transcribedText = sb.toString().trim()
+            }
+        }
+
+        if (transcribedText.isBlank()) {
+            throw IllegalStateException("Gemini ASR 未返回转写文本内容")
+        }
+
+        onProgress("📝 [Gemini ASR 转录结果]: \"$transcribedText\"")
+        transcribedText
+    }
+
+    /**
+     * 高速两阶段模式：
+     * 1. gemini-3.5-transcribe: 语音 -> 规范文本
+     * 2. gemini-3.5-flash-lite: 文本 -> 结构化账单
+     */
+    suspend fun parseAudioWithAsr(
+        audioFile: File,
+        onProgress: (String) -> Unit = {}
+    ): List<BillItem> {
+        val transcribedText = transcribeAudio(audioFile, onProgress)
+        return parseText(transcribedText, onProgress)
+    }
+
+    /**
+     * 原生多模态解析（直接将录音音频文件作为多模态载荷上传给主模型）
      */
     suspend fun parseAudio(
         audioFile: File,

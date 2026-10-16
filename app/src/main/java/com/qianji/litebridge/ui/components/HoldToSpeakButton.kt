@@ -36,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,12 +50,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.qianji.litebridge.audio.SystemSpeechRecognizer
 import com.qianji.litebridge.service.GeminiService
 import com.qianji.litebridge.service.RateLimitQueue
 import com.qianji.litebridge.ui.theme.DangerRed
@@ -88,16 +84,6 @@ fun HoldToSpeakButton(
     var pressStartTime by remember { mutableLongStateOf(0L) }
     var currentRecordFile by remember { mutableStateOf<File?>(null) }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
-
-    // 系统 ASR 实时语音文本
-    var liveSpeechText by remember { mutableStateOf("") }
-    val speechRecognizer = remember { SystemSpeechRecognizer(context) }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            speechRecognizer.destroy()
-        }
-    }
 
     // 录音权限检查
     var hasAudioPermission by remember {
@@ -139,40 +125,6 @@ fun HoldToSpeakButton(
         label = "buttonBgColor"
     )
 
-    fun processTranscribedText(text: String) {
-        if (text.isBlank()) {
-            onLog("⚠️ 未识别出有效语音文本")
-            recordState = RecordState.IDLE
-            return
-        }
-
-        recordState = RecordState.PROCESSING
-        onLog("🤖 语音转文字完成 (\"$text\")，正在调用 Gemini 解析账单...")
-
-        scope.launch {
-            try {
-                val bills = withContext(Dispatchers.IO) {
-                    geminiService.parseText(text) { progressMsg ->
-                        onLog(progressMsg)
-                    }
-                }
-
-                if (bills.isEmpty()) {
-                    onLog("⚠️ 未从文字中识别出有效账单")
-                } else {
-                    onLog("✨ 成功识别出 ${bills.size} 笔账单，加入限流队列...")
-                    queue.enqueueAll(bills)
-                }
-            } catch (e: Exception) {
-                onLog("❌ AI 识别异常: ${e.message}")
-                e.printStackTrace()
-            } finally {
-                recordState = RecordState.IDLE
-                liveSpeechText = ""
-            }
-        }
-    }
-
     fun startRecording() {
         if (!hasAudioPermission) {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -180,85 +132,46 @@ fun HoldToSpeakButton(
         }
 
         pressStartTime = System.currentTimeMillis()
-        liveSpeechText = ""
 
-        val diag = speechRecognizer.diagnose(prefs.asrEngineChoice)
-        val useAsr = prefs.asrModeEnabled && diag.isAvailable
+        try {
+            val audioFile = File(context.cacheDir, "record_${pressStartTime}.m4a")
+            currentRecordFile = audioFile
 
-        if (prefs.asrModeEnabled && !diag.isAvailable) {
-            onLog("⚠️ [语音识别降级] 未检测到系统 RecognitionService 引擎，自动切回原生多模态录音")
-            onLog("💡 [三星 One UI 提示] 请前往「设置 -> 常规管理 -> 键盘列表和默认键盘 -> 语音输入」检查是否启用了三星/Google语音输入")
-        }
-
-        if (useAsr) {
-            recordState = RecordState.RECORDING
-            onLog("🎙️ [系统语音识别] 启动引擎: ${diag.activeEngineName}，按住说话...")
-            speechRecognizer.startListening(
-                preferredChoice = prefs.asrEngineChoice,
-                onPartial = { partial ->
-                    liveSpeechText = partial
-                },
-                onResult = { finalResult ->
-                    onLog("📝 [系统语音识别] 最终转录: \"$finalResult\"")
-                    processTranscribedText(finalResult)
-                },
-                onError = { errorMsg ->
-                    onLog("⚠️ [系统语音识别] $errorMsg")
-                    recordState = RecordState.IDLE
-                }
-            )
-        } else {
-            // 原生多模态录音模式
-            try {
-                val audioFile = File(context.cacheDir, "record_${pressStartTime}.m4a")
-                currentRecordFile = audioFile
-
-                val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    MediaRecorder(context)
-                } else {
-                    @Suppress("DEPRECATION")
-                    MediaRecorder()
-                }.apply {
-                    setAudioSource(MediaRecorder.AudioSource.MIC)
-                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                    setAudioChannels(1)
-                    setAudioSamplingRate(16000)
-                    setAudioEncodingBitRate(32000)
-                    setOutputFile(audioFile.absolutePath)
-                    prepare()
-                    start()
-                }
-
-                mediaRecorder = recorder
-                recordState = RecordState.RECORDING
-                onLog("🎙️ [原生多模态] 开始录音，按住说话...")
-            } catch (e: Exception) {
-                recordState = RecordState.IDLE
-                onLog("❌ 启动录音失败: ${e.message}")
-                e.printStackTrace()
+            val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioChannels(1)
+                setAudioSamplingRate(16000)
+                setAudioEncodingBitRate(32000)
+                setOutputFile(audioFile.absolutePath)
+                prepare()
+                start()
             }
+
+            mediaRecorder = recorder
+            recordState = RecordState.RECORDING
+
+            if (prefs.asrModeEnabled) {
+                onLog("🎙️ [Gemini ASR 模式] 开始录音，按住说话...")
+            } else {
+                onLog("🎙️ [原生多模态模式] 开始录音，按住说话...")
+            }
+        } catch (e: Exception) {
+            recordState = RecordState.IDLE
+            onLog("❌ 启动录音失败: ${e.message}")
+            e.printStackTrace()
         }
     }
 
     fun stopAndProcessRecording() {
         val duration = System.currentTimeMillis() - pressStartTime
-        val useAsr = prefs.asrModeEnabled && speechRecognizer.isAvailable()
 
-        if (useAsr) {
-            if (duration < 600) {
-                onLog("⚠️ 按住时间过短 (${duration}ms)，已取消")
-                speechRecognizer.cancel()
-                recordState = RecordState.IDLE
-                liveSpeechText = ""
-                return
-            }
-            recordState = RecordState.PROCESSING
-            speechRecognizer.stopListening()
-            return
-        }
-
-        // 原生多模态模式处理
         try {
             mediaRecorder?.stop()
             mediaRecorder?.release()
@@ -269,7 +182,7 @@ fun HoldToSpeakButton(
         }
 
         val file = currentRecordFile
-        if (duration < 800) {
+        if (duration < 600) {
             onLog("⚠️ 录音时间太短 (${duration}ms)，已自动忽略")
             file?.delete()
             recordState = RecordState.IDLE
@@ -283,13 +196,23 @@ fun HoldToSpeakButton(
         }
 
         recordState = RecordState.PROCESSING
-        onLog("🤖 录音完成 (${duration}ms)，正在调用 Gemini 进行多模态解析...")
+        if (prefs.asrModeEnabled) {
+            onLog("🤖 录音完成 (${duration}ms)，正在调用 gemini-3.5-transcribe 高速转写...")
+        } else {
+            onLog("🤖 录音完成 (${duration}ms)，正在调用 Gemini 进行多模态解析...")
+        }
 
         scope.launch {
             try {
                 val bills = withContext(Dispatchers.IO) {
-                    geminiService.parseAudio(file) { progressMsg ->
-                        onLog(progressMsg)
+                    if (prefs.asrModeEnabled) {
+                        geminiService.parseAudioWithAsr(file) { progressMsg ->
+                            onLog(progressMsg)
+                        }
+                    } else {
+                        geminiService.parseAudio(file) { progressMsg ->
+                            onLog(progressMsg)
+                        }
                     }
                 }
 
@@ -325,7 +248,6 @@ fun HoldToSpeakButton(
                     if (upOrCancel != null) {
                         stopAndProcessRecording()
                     } else {
-                        speechRecognizer.cancel()
                         try {
                             mediaRecorder?.stop()
                             mediaRecorder?.release()
@@ -333,7 +255,6 @@ fun HoldToSpeakButton(
                         mediaRecorder = null
                         currentRecordFile?.delete()
                         recordState = RecordState.IDLE
-                        liveSpeechText = ""
                         onLog("⚠️ 录音手势已取消")
                     }
                 }
@@ -378,10 +299,9 @@ fun HoldToSpeakButton(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        val diag = speechRecognizer.diagnose(prefs.asrEngineChoice)
                         Text(
                             text = if (prefs.asrModeEnabled) {
-                                if (diag.isAvailable) "${diag.activeEngineName} · 秒级响应" else "未检测到引擎 · 将自动切多模态"
+                                "Gemini 专用 ASR 转写 · 两阶段高速"
                             } else {
                                 "原生多模态直传 · 音频多模态"
                             },
@@ -406,31 +326,12 @@ fun HoldToSpeakButton(
                             )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
-
-                        if (liveSpeechText.isNotBlank()) {
-                            Text(
-                                text = "\"$liveSpeechText\"",
-                                color = Color.White,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "松开立即提取账单",
-                                color = Color.White.copy(alpha = 0.85f),
-                                fontSize = 13.sp
-                            )
-                        } else {
-                            Text(
-                                text = if (prefs.asrModeEnabled) "请说话... 松开立即记账" else "正在录音中... 松开立即记账",
-                                color = Color.White,
-                                fontSize = 19.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Text(
+                            text = if (prefs.asrModeEnabled) "请说话... 松开立即高速转写" else "正在录音中... 松开立即记账",
+                            color = Color.White,
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     RecordState.PROCESSING -> {
@@ -441,7 +342,7 @@ fun HoldToSpeakButton(
                         )
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(
-                            text = "AI 正在提取账单...",
+                            text = if (prefs.asrModeEnabled) "AI 正在转写与提取账单..." else "AI 正在提取账单...",
                             color = Color.White,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold

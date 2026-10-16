@@ -18,20 +18,6 @@
 
     <!-- Queries declaration for Android 11+ (API 30~35+ Package Visibility) -->
     <queries>
-        <!-- 允许查询系统语音识别服务 (兼容三星 One UI Bixby、Google、讯飞、百度等) -->
-        <intent>
-            <action android:name="android.speech.RecognitionService" />
-        </intent>
-        <package android:name="com.samsung.android.bixby.agent" />
-        <package android:name="com.samsung.android.honeyboard" />
-        <package android:name="com.samsung.android.svoice" />
-        <package android:name="com.samsung.android.svoiceime" />
-        <package android:name="com.samsung.android.scs" />
-        <package android:name="com.google.android.googlequicksearchbox" />
-        <package android:name="com.google.android.tts" />
-        <package android:name="com.iflytek.speechcloud" />
-        <package android:name="com.baidu.speech" />
-
         <!-- 钱迹 URL Scheme 唤起支持 -->
         <intent>
             <action android:name="android.intent.action.VIEW" />

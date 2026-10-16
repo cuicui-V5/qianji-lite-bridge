@@ -33,7 +33,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.NotificationCompat
 import com.qianji.litebridge.MainActivity
 import com.qianji.litebridge.QianjiApp
-import com.qianji.litebridge.audio.SystemSpeechRecognizer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -64,7 +63,6 @@ class FloatingCapsuleService : Service() {
 
     private var currentState = CapsuleState.IDLE
     private var mediaRecorder: MediaRecorder? = null
-    private var speechRecognizer: SystemSpeechRecognizer? = null
     private var currentRecordFile: File? = null
     private var recordStartTime = 0L
     private var wakeLock: PowerManager.WakeLock? = null
@@ -77,8 +75,6 @@ class FloatingCapsuleService : Service() {
 
         val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
         wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "QianjiLiteBridge:FloatingCapsuleRecording")
-
-        speechRecognizer = SystemSpeechRecognizer(this)
 
         startForegroundWithNotification()
         createCapsuleOverlay()
@@ -153,22 +149,16 @@ class FloatingCapsuleService : Service() {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            try {
-                startForeground(NOTIFICATION_ID, notification)
-            } catch (ex: Exception) {
-                ex.printStackTrace()
-            }
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
     private fun createCapsuleOverlay() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+
         val prefs = QianjiApp.instance.prefs
-
-        val displayMetrics = resources.displayMetrics
-        val density = displayMetrics.density
-
-        fun dp(value: Int) = (value * density).toInt()
+        val initialX = prefs.floatingX
+        val initialY = prefs.floatingY
 
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -182,37 +172,51 @@ class FloatingCapsuleService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            // 恢复上次拖动保存的位置，或者默认靠右居中偏上
-            x = if (prefs.floatingX != -1) prefs.floatingX else (displayMetrics.widthPixels - dp(140))
-            y = if (prefs.floatingY != -1) prefs.floatingY else (displayMetrics.heightPixels / 3)
+            x = initialX
+            y = initialY
         }
 
-        // 构建胶囊视图
+        val density = resources.displayMetrics.density
+        val dpToPx = { dp: Int -> (dp * density).toInt() }
+
+        // 构建胶囊根布局 (水平 LinearLayout)
         capsuleView = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(14), dp(8), dp(16), dp(8))
-            elevation = dp(8).toFloat()
-
-            iconView = TextView(context).apply {
-                text = "🎙️"
-                textSize = 15f
-                setPadding(0, 0, dp(6), 0)
-            }
-            addView(iconView)
-
-            labelView = TextView(context).apply {
-                text = "按住记账"
-                textSize = 13f
-                setTextColor(Color.WHITE)
-                setTypeface(null, Typeface.BOLD)
-            }
-            addView(labelView)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(14), dpToPx(9), dpToPx(16), dpToPx(9))
+            elevation = 12f * density
         }
+
+        // 图标 / 状态指示 Emoji
+        iconView = TextView(this).apply {
+            text = "🎙️"
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+        }
+
+        // 文字标签
+        labelView = TextView(this).apply {
+            text = "按住记账"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = dpToPx(6)
+            }
+            layoutParams = lp
+        }
+
+        capsuleView?.addView(iconView)
+        capsuleView?.addView(labelView)
 
         updateCapsuleStyle(CapsuleState.IDLE, "🎙️", "按住记账")
         setupTouchListener()
@@ -221,31 +225,43 @@ class FloatingCapsuleService : Service() {
             windowManager?.addView(capsuleView, windowParams)
         } catch (e: Exception) {
             e.printStackTrace()
-            QianjiApp.instance.addLog("❌ 创建悬浮窗视图失败: ${e.message}")
+            QianjiApp.instance.addLog("❌ 悬浮窗创建失败: ${e.message}")
         }
     }
 
-    private fun updateCapsuleStyle(state: CapsuleState, icon: String, text: String) {
+    private fun updateCapsuleStyle(state: CapsuleState, iconText: String, message: String) {
         currentState = state
-        iconView?.text = icon
-        labelView?.text = text
+        iconView?.text = iconText
+        labelView?.text = message
 
         val density = resources.displayMetrics.density
-        val radius = 24 * density
-
-        val (bgColor, strokeColor) = when (state) {
-            CapsuleState.IDLE -> Color.parseColor("#E61E293B") to Color.parseColor("#40FFFFFF")
-            CapsuleState.RECORDING -> Color.parseColor("#E6DC2626") to Color.parseColor("#FFFFFFFF")
-            CapsuleState.PROCESSING -> Color.parseColor("#E64F46E5") to Color.parseColor("#A5B4FC")
-            CapsuleState.SUCCESS -> Color.parseColor("#E616A34A") to Color.parseColor("#86EFAC")
-            CapsuleState.ERROR -> Color.parseColor("#E6D97706") to Color.parseColor("#FDE68A")
-        }
+        val radius = 24f * density
 
         val backgroundDrawable = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = radius
-            setColor(bgColor)
-            setStroke((1.5f * density).toInt(), strokeColor)
+            when (state) {
+                CapsuleState.IDLE -> {
+                    setColor(Color.parseColor("#E62563EB")) // 经典半透明主蓝 (90% alpha)
+                    setStroke((1.5f * density).toInt(), Color.parseColor("#66FFFFFF"))
+                }
+                CapsuleState.RECORDING -> {
+                    setColor(Color.parseColor("#F2DC2626")) // 录音深红
+                    setStroke((2f * density).toInt(), Color.parseColor("#FFFFFFFF"))
+                }
+                CapsuleState.PROCESSING -> {
+                    setColor(Color.parseColor("#E67C3AED")) // AI 思考紫
+                    setStroke((1.5f * density).toInt(), Color.parseColor("#80FFFFFF"))
+                }
+                CapsuleState.SUCCESS -> {
+                    setColor(Color.parseColor("#E616A34A")) // 成功绿
+                    setStroke((2f * density).toInt(), Color.parseColor("#FFFFFFFF"))
+                }
+                CapsuleState.ERROR -> {
+                    setColor(Color.parseColor("#E6EA580C")) // 警告橙红
+                    setStroke((1.5f * density).toInt(), Color.parseColor("#80FFFFFF"))
+                }
+            }
         }
 
         capsuleView?.background = backgroundDrawable
@@ -358,42 +374,12 @@ class FloatingCapsuleService : Service() {
             wakeLock?.acquire(60_000) // 最长持有 60 秒唤醒锁，防止锁屏或休眠切断麦克风
         } catch (_: Exception) {}
 
-        val choice = app.prefs.asrEngineChoice
-        val diag = speechRecognizer?.diagnose(choice)
-        val useAsr = app.prefs.asrModeEnabled && (diag?.isAvailable == true)
-
-        if (app.prefs.asrModeEnabled && diag?.isAvailable != true) {
-            app.addLog("⚠️ [悬浮胶囊降级] 未检测到系统 RecognitionService 语音引擎，自动切回原生多模态录音")
-            app.addLog("💡 [三星 One UI 提示] 请前往「设置 -> 常规管理 -> 键盘列表和默认键盘 -> 语音输入」检查")
+        if (app.prefs.asrModeEnabled) {
+            app.addLog("🎙️ [悬浮胶囊] 启动录音 (Gemini ASR 模式)，按住说话...")
+        } else {
+            app.addLog("🎙️ [悬浮胶囊] 启动录音 (原生多模态模式)，按住说话...")
         }
 
-        if (useAsr) {
-            app.addLog("🎙️ [悬浮胶囊] 启动引擎: ${diag?.activeEngineName ?: "系统语音"}，按住说话...")
-            updateCapsuleStyle(CapsuleState.RECORDING, "🔴", "倾听中...")
-
-            speechRecognizer?.startListening(
-                preferredChoice = choice,
-                onPartial = { partial ->
-                    val preview = if (partial.length > 6) "..." + partial.takeLast(5) else partial
-                    updateCapsuleStyle(CapsuleState.RECORDING, "🔴", preview)
-                },
-                onResult = { finalResult ->
-                    app.addLog("📝 [悬浮胶囊] 系统转录结果: \"$finalResult\"")
-                    processTranscribedText(finalResult)
-                },
-                onError = { errorMsg ->
-                    app.addLog("⚠️ [悬浮胶囊] 语音识别提示: $errorMsg")
-                    updateCapsuleStyle(CapsuleState.ERROR, "⚠️", "未听清")
-                    mainHandler.postDelayed({
-                        updateCapsuleStyle(CapsuleState.IDLE, "🎙️", "按住记账")
-                    }, 1500)
-                }
-            )
-            return
-        }
-
-        // 原生多模态录音模式
-        app.addLog("🎙️ [悬浮胶囊] 开始原生录音，按住说话...")
         val audioFile = File(cacheDir, "float_record_${recordStartTime}.m4a")
         currentRecordFile = audioFile
 
@@ -434,65 +420,6 @@ class FloatingCapsuleService : Service() {
         }
     }
 
-    private fun processTranscribedText(text: String) {
-        val app = QianjiApp.instance
-        if (text.isBlank()) {
-            app.addLog("⚠️ [悬浮胶囊] 未识别到有效文字内容")
-            updateCapsuleStyle(CapsuleState.ERROR, "⚠️", "未识别文字")
-            mainHandler.postDelayed({
-                updateCapsuleStyle(CapsuleState.IDLE, "🎙️", "按住记账")
-            }, 1500)
-            return
-        }
-
-        updateCapsuleStyle(CapsuleState.PROCESSING, "⚡", "AI解析中...")
-        app.addLog("🤖 [悬浮胶囊] 语音转文字完成 (\"$text\")，正在调用 Gemini 解析账单...")
-
-        serviceScope.launch {
-            try {
-                val bills = withContext(Dispatchers.IO) {
-                    app.geminiService.parseText(text) { progressMsg ->
-                        app.addLog(progressMsg)
-                    }
-                }
-
-                if (bills.isEmpty()) {
-                    app.addLog("⚠️ [悬浮胶囊] 未从文字中识别出有效账单")
-                    withContext(Dispatchers.Main) {
-                        updateCapsuleStyle(CapsuleState.ERROR, "⚠️", "未识别出金额")
-                    }
-                } else {
-                    val firstBill = bills.first()
-                    val summary = "${firstBill.catename ?: "账单"} ¥${firstBill.money}"
-                    app.addLog("✨ [悬浮胶囊] 识别成功 (${bills.size}笔): $summary，加入限流队列 (不抢占焦点)...")
-
-                    // 悬浮窗发起的记账：autoReturn 设为 false，钱迹记账后不强行跳回本 App，保留在用户当前宿主应用
-                    val billsToEnqueue = bills.map { it.copy(autoReturn = false) }
-                    app.queue.enqueueAll(billsToEnqueue)
-
-                    withContext(Dispatchers.Main) {
-                        vibrate(35)
-                        val display = if (bills.size == 1) "¥${firstBill.money} ${firstBill.catename ?: ""}".trim() else "已记 ${bills.size} 笔"
-                        updateCapsuleStyle(CapsuleState.SUCCESS, "✅", display)
-                    }
-                }
-            } catch (e: Exception) {
-                app.addLog("❌ [悬浮胶囊] AI解析异常: ${e.message}")
-                e.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    updateCapsuleStyle(CapsuleState.ERROR, "❌", "识别异常")
-                }
-            } finally {
-                delay(2000)
-                withContext(Dispatchers.Main) {
-                    if (currentState != CapsuleState.RECORDING) {
-                        updateCapsuleStyle(CapsuleState.IDLE, "🎙️", "按住记账")
-                    }
-                }
-            }
-        }
-    }
-
     private fun stopAndProcessRecording() {
         val duration = System.currentTimeMillis() - recordStartTime
         val app = QianjiApp.instance
@@ -501,22 +428,6 @@ class FloatingCapsuleService : Service() {
                 wakeLock?.release()
             }
         } catch (_: Exception) {}
-
-        val useAsr = app.prefs.asrModeEnabled && (speechRecognizer?.isAvailable() == true)
-        if (useAsr) {
-            if (duration < 600) {
-                app.addLog("⚠️ [悬浮胶囊] 说话时间过短 (${duration}ms)，已忽略")
-                speechRecognizer?.cancel()
-                updateCapsuleStyle(CapsuleState.ERROR, "⚠️", "时间太短")
-                mainHandler.postDelayed({
-                    updateCapsuleStyle(CapsuleState.IDLE, "🎙️", "按住记账")
-                }, 1200)
-                return
-            }
-            updateCapsuleStyle(CapsuleState.PROCESSING, "⚡", "转写中...")
-            speechRecognizer?.stopListening()
-            return
-        }
 
         try {
             mediaRecorder?.stop()
@@ -548,14 +459,25 @@ class FloatingCapsuleService : Service() {
             return
         }
 
-        updateCapsuleStyle(CapsuleState.PROCESSING, "⚡", "AI解析中...")
-        app.addLog("🤖 [悬浮胶囊] 录音完成 (${duration}ms)，正在调用 Gemini 进行多模态解析...")
+        val useAsr = app.prefs.asrModeEnabled
+        updateCapsuleStyle(CapsuleState.PROCESSING, "⚡", if (useAsr) "高速转写中..." else "AI解析中...")
+        if (useAsr) {
+            app.addLog("🤖 [悬浮胶囊] 录音完成 (${duration}ms)，正在调用 gemini-3.5-transcribe 高速转写...")
+        } else {
+            app.addLog("🤖 [悬浮胶囊] 录音完成 (${duration}ms)，正在调用 Gemini 进行多模态解析...")
+        }
 
         serviceScope.launch {
             try {
                 val bills = withContext(Dispatchers.IO) {
-                    app.geminiService.parseAudio(file) { progressMsg ->
-                        app.addLog(progressMsg)
+                    if (useAsr) {
+                        app.geminiService.parseAudioWithAsr(file) { progressMsg ->
+                            app.addLog(progressMsg)
+                        }
+                    } else {
+                        app.geminiService.parseAudio(file) { progressMsg ->
+                            app.addLog(progressMsg)
+                        }
                     }
                 }
 
@@ -568,7 +490,7 @@ class FloatingCapsuleService : Service() {
                     val firstBill = bills.first()
                     val summary = "${firstBill.catename ?: "账单"} ¥${firstBill.money}"
                     app.addLog("✨ [悬浮胶囊] 识别成功 (${bills.size}笔): $summary，加入限流队列 (不抢占焦点)...")
-                    
+
                     // 悬浮窗发起的记账：autoReturn 设为 false，钱迹记账后不强行跳回本 App，保留在用户当前宿主应用
                     val billsToEnqueue = bills.map { it.copy(autoReturn = false) }
                     app.queue.enqueueAll(billsToEnqueue)
@@ -601,10 +523,7 @@ class FloatingCapsuleService : Service() {
         try {
             if (wakeLock?.isHeld == true) wakeLock?.release()
         } catch (_: Exception) {}
-        val useAsr = QianjiApp.instance.prefs.asrModeEnabled && (speechRecognizer?.isAvailable() == true)
-        if (useAsr) {
-            speechRecognizer?.cancel()
-        }
+
         try {
             mediaRecorder?.stop()
             mediaRecorder?.release()
@@ -643,9 +562,6 @@ class FloatingCapsuleService : Service() {
             if (wakeLock?.isHeld == true) wakeLock?.release()
         } catch (_: Exception) {}
         wakeLock = null
-
-        speechRecognizer?.destroy()
-        speechRecognizer = null
 
         try {
             mediaRecorder?.release()

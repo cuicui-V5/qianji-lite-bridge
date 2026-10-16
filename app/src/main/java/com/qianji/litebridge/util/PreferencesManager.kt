@@ -59,12 +59,8 @@ class PreferencesManager(context: Context) {
         set(value) = prefs.edit().putInt(KEY_FLOATING_Y, value).apply()
 
     var asrModeEnabled: Boolean
-        get() = prefs.getBoolean(KEY_ASR_MODE, true) // 默认开启系统语音识别转文字，秒级响应
+        get() = prefs.getBoolean(KEY_ASR_MODE, true) // 默认开启 Gemini 专用 ASR (gemini-3.5-transcribe) 高速转录
         set(value) = prefs.edit().putBoolean(KEY_ASR_MODE, value).apply()
-
-    var asrEngineChoice: String
-        get() = prefs.getString(KEY_ASR_ENGINE_CHOICE, "auto") ?: "auto"
-        set(value) = prefs.edit().putString(KEY_ASR_ENGINE_CHOICE, value).apply()
 
     init {
         // 若之前保存了旧版默认资产账户，按最新需求重置为空（默认不留账户）
@@ -93,7 +89,6 @@ class PreferencesManager(context: Context) {
         private const val KEY_FLOATING_X = "floating_capsule_x"
         private const val KEY_FLOATING_Y = "floating_capsule_y"
         private const val KEY_ASR_MODE = "asr_mode_enabled"
-        private const val KEY_ASR_ENGINE_CHOICE = "asr_engine_choice"
 
         const val DEFAULT_CATEGORIES = """三餐
 交通
