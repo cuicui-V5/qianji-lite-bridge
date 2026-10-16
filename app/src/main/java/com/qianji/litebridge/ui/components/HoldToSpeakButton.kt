@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.qianji.litebridge.QianjiApp
 import com.qianji.litebridge.service.GeminiService
 import com.qianji.litebridge.service.RateLimitQueue
 import com.qianji.litebridge.ui.theme.DangerRed
@@ -157,11 +158,10 @@ fun HoldToSpeakButton(
             mediaRecorder = recorder
             recordState = RecordState.RECORDING
 
-            if (prefs.asrModeEnabled) {
-                onLog("🎙️ [Gemini ASR 模式] 开始录音，按住说话...")
-            } else {
-                onLog("🎙️ [原生多模态模式] 开始录音，按住说话...")
-            }
+            val aiName = if (prefs.aiProvider == "custom") "自定义AI" else "Gemini"
+            val asrName = if (prefs.asrProvider == "baidu") "百度语音" else "Gemini转写"
+            val modeDesc = if (prefs.aiProvider == "custom" || prefs.asrModeEnabled) "$asrName + $aiName" else "Gemini原生多模态"
+            onLog("🎙️ [$modeDesc] 开始录音，按住说话...")
         } catch (e: Exception) {
             recordState = RecordState.IDLE
             onLog("❌ 启动录音失败: ${e.message}")
@@ -196,8 +196,9 @@ fun HoldToSpeakButton(
         }
 
         recordState = RecordState.PROCESSING
-        if (prefs.asrModeEnabled) {
-            onLog("🤖 录音完成 (${duration}ms)，正在调用 gemini-3.5-transcribe 高速转写...")
+        val asrDesc = if (prefs.asrProvider == "baidu") "百度语音识别" else "gemini-3.5-transcribe"
+        if (prefs.aiProvider == "custom" || prefs.asrModeEnabled) {
+            onLog("🤖 录音完成 (${duration}ms)，正在调用 $asrDesc 转写...")
         } else {
             onLog("🤖 录音完成 (${duration}ms)，正在调用 Gemini 进行多模态解析...")
         }
@@ -205,14 +206,8 @@ fun HoldToSpeakButton(
         scope.launch {
             try {
                 val bills = withContext(Dispatchers.IO) {
-                    if (prefs.asrModeEnabled) {
-                        geminiService.parseAudioWithAsr(file) { progressMsg ->
-                            onLog(progressMsg)
-                        }
-                    } else {
-                        geminiService.parseAudio(file) { progressMsg ->
-                            onLog(progressMsg)
-                        }
+                    QianjiApp.instance.aiServiceHub.parseAudio(file) { progressMsg ->
+                        onLog(progressMsg)
                     }
                 }
 
@@ -299,11 +294,13 @@ fun HoldToSpeakButton(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
+                        val aiDesc = if (prefs.aiProvider == "custom") prefs.customAiModel.ifBlank { "自定义AI" } else "Gemini"
+                        val asrDesc = if (prefs.asrProvider == "baidu") "百度语音" else "Gemini转写"
                         Text(
-                            text = if (prefs.asrModeEnabled) {
-                                "Gemini 专用 ASR 转写 · 两阶段高速"
-                            } else {
-                                "原生多模态直传 · 音频多模态"
+                            text = when {
+                                prefs.aiProvider == "custom" -> "$asrDesc + $aiDesc"
+                                prefs.asrModeEnabled -> "$asrDesc · 两阶段模式"
+                                else -> "原生多模态直传 · 音频解析"
                             },
                             color = Color.White.copy(alpha = 0.8f),
                             fontSize = 13.sp

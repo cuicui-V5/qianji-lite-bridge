@@ -4,6 +4,9 @@ import android.app.Application
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.mutableStateListOf
+import com.qianji.litebridge.service.AiServiceHub
+import com.qianji.litebridge.service.BaiduSpeechService
+import com.qianji.litebridge.service.CustomAiService
 import com.qianji.litebridge.service.GeminiService
 import com.qianji.litebridge.service.HttpServer
 import com.qianji.litebridge.service.RateLimitQueue
@@ -26,6 +29,12 @@ class QianjiApp : Application() {
         private set
     lateinit var geminiService: GeminiService
         private set
+    lateinit var customAiService: CustomAiService
+        private set
+    lateinit var baiduSpeechService: BaiduSpeechService
+        private set
+    lateinit var aiServiceHub: AiServiceHub
+        private set
 
     var httpServer: HttpServer? = null
         private set
@@ -40,6 +49,9 @@ class QianjiApp : Application() {
         prefs = PreferencesManager(this)
         queue = RateLimitQueue(this, prefs) { msg -> addLog(msg) }
         geminiService = GeminiService(prefs)
+        customAiService = CustomAiService(prefs)
+        baiduSpeechService = BaiduSpeechService(prefs)
+        aiServiceHub = AiServiceHub(prefs, geminiService, customAiService, baiduSpeechService)
 
         // 默认启动内置 HTTP 局域网网关
         ensureHttpServerStarted(8848)

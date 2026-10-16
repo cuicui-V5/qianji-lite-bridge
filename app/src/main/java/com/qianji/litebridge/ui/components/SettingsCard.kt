@@ -3,8 +3,10 @@ package com.qianji.litebridge.ui.components
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,9 +17,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
@@ -26,27 +32,31 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.qianji.litebridge.ui.theme.DangerRed
 import com.qianji.litebridge.ui.theme.PrimaryBlue
 import com.qianji.litebridge.ui.theme.SuccessGreen
 import com.qianji.litebridge.util.PreferencesManager
@@ -58,31 +68,61 @@ fun SettingsCard(
 ) {
     val context = LocalContext.current
     var isExpanded by remember { mutableStateOf(false) }
-
-    var apiKey by remember { mutableStateOf(prefs.geminiApiKey) }
-    var categories by remember { mutableStateOf(prefs.categories) }
-    var accounts by remember { mutableStateOf(prefs.accounts) }
-    var defaultBook by remember { mutableStateOf(prefs.defaultBook) }
-    var apiToken by remember { mutableStateOf(prefs.apiToken) }
-    var geminiModel by remember { mutableStateOf(prefs.geminiModel) }
-    var thinkingBudgetText by remember { mutableStateOf(prefs.thinkingBudget.toString()) }
-    var autoReturn by remember { mutableStateOf(prefs.autoReturn) }
-    var asrModeEnabled by remember { mutableStateOf(prefs.asrModeEnabled) }
-
-    var isApiKeyVisible by remember { mutableStateOf(false) }
     var showAutoSavedHint by remember { mutableStateOf(false) }
 
+    // 1. AI 提供商
+    var aiProvider by remember { mutableStateOf(prefs.aiProvider) }
+    var geminiApiKey by remember { mutableStateOf(prefs.geminiApiKey) }
+    var geminiModel by remember { mutableStateOf(prefs.geminiModel) }
+    var thinkingBudgetText by remember { mutableStateOf(prefs.thinkingBudget.toString()) }
+
+    var customAiBaseUrl by remember { mutableStateOf(prefs.customAiBaseUrl) }
+    var customAiApiKey by remember { mutableStateOf(prefs.customAiApiKey) }
+    var customAiModel by remember { mutableStateOf(prefs.customAiModel) }
+
+    // 2. 语音识别 (ASR)
+    var asrModeEnabled by remember { mutableStateOf(prefs.asrModeEnabled) }
+    var asrProvider by remember { mutableStateOf(prefs.asrProvider) }
+    var baiduApiKey by remember { mutableStateOf(prefs.baiduApiKey) }
+    var baiduSecretKey by remember { mutableStateOf(prefs.baiduSecretKey) }
+    var baiduDevPid by remember { mutableIntStateOf(prefs.baiduDevPid) }
+
+    // 3. 账本与偏好
+    var defaultBook by remember { mutableStateOf(prefs.defaultBook) }
+    var autoReturn by remember { mutableStateOf(prefs.autoReturn) }
+    var categories by remember { mutableStateOf(prefs.categories) }
+    var accounts by remember { mutableStateOf(prefs.accounts) }
+
+    // 4. 局域网网关
+    var apiToken by remember { mutableStateOf(prefs.apiToken) }
+
+    // 密码可见性
+    var isGeminiKeyVisible by remember { mutableStateOf(false) }
+    var isCustomKeyVisible by remember { mutableStateOf(false) }
+    var isBaiduSecretVisible by remember { mutableStateOf(false) }
+
     fun saveAll(showToast: Boolean = false) {
-        prefs.geminiApiKey = apiKey
+        prefs.aiProvider = aiProvider
+        prefs.geminiApiKey = geminiApiKey
         prefs.geminiModel = geminiModel
+        prefs.thinkingBudget = thinkingBudgetText.toIntOrNull() ?: 0
+
+        prefs.customAiBaseUrl = customAiBaseUrl
+        prefs.customAiApiKey = customAiApiKey
+        prefs.customAiModel = customAiModel
+
+        prefs.asrModeEnabled = asrModeEnabled
+        prefs.asrProvider = asrProvider
+        prefs.baiduApiKey = baiduApiKey
+        prefs.baiduSecretKey = baiduSecretKey
+        prefs.baiduDevPid = baiduDevPid
+
+        prefs.defaultBook = defaultBook
+        prefs.autoReturn = autoReturn
         prefs.categories = categories
         prefs.accounts = accounts
-        prefs.defaultBook = defaultBook
         prefs.apiToken = apiToken
-        val budget = thinkingBudgetText.toIntOrNull() ?: 0
-        prefs.thinkingBudget = budget
-        prefs.autoReturn = autoReturn
-        prefs.asrModeEnabled = asrModeEnabled
+
         showAutoSavedHint = true
         if (showToast) {
             Toast.makeText(context, "配置已成功保存", Toast.LENGTH_SHORT).show()
@@ -157,70 +197,197 @@ fun SettingsCard(
                         .fillMaxWidth()
                         .padding(top = 16.dp)
                 ) {
-                    // 记账后自动跳回本应用开关
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    // ==========================================
+                    // 分区 1：AI 账单解析模型 (LLM)
+                    // ==========================================
+                    SectionCard(
+                        icon = Icons.Default.Psychology,
+                        title = "AI 账单提取大模型",
+                        subtitle = "负责理解语义并结构化输出记账参数"
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "记账后自动跳回本网关",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
+                        // AI 提供商切换 Tab
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ProviderTab(
+                                title = "Google Gemini",
+                                selected = aiProvider == "gemini",
+                                onClick = {
+                                    aiProvider = "gemini"
+                                    saveAll(showToast = false)
+                                },
+                                modifier = Modifier.weight(1f)
                             )
+                            ProviderTab(
+                                title = "自定义 / DeepSeek",
+                                selected = aiProvider == "custom",
+                                onClick = {
+                                    aiProvider = "custom"
+                                    saveAll(showToast = false)
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (aiProvider == "gemini") {
+                            // Gemini 配置
+                            OutlinedTextField(
+                                value = geminiApiKey,
+                                onValueChange = {
+                                    geminiApiKey = it
+                                    saveAll(showToast = false)
+                                },
+                                label = { Text("Gemini API Key") },
+                                placeholder = { Text("AIzaSy...") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                visualTransformation = if (isGeminiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { isGeminiKeyVisible = !isGeminiKeyVisible }) {
+                                        Icon(
+                                            imageVector = if (isGeminiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = "切换可见性"
+                                        )
+                                    }
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            OutlinedTextField(
+                                value = geminiModel,
+                                onValueChange = {
+                                    geminiModel = it
+                                    saveAll(showToast = false)
+                                },
+                                label = { Text("Gemini 模型名称") },
+                                placeholder = { Text("gemini-3.5-flash-lite") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            OutlinedTextField(
+                                value = thinkingBudgetText,
+                                onValueChange = {
+                                    thinkingBudgetText = it.filter { c -> c.isDigit() }
+                                    saveAll(showToast = false)
+                                },
+                                label = { Text("思考预算 (0=极速 Minimal 模式)") },
+                                placeholder = { Text("0") },
+                                supportingText = { Text("0=极速 Minimal 模式 (推荐用于秒级记账)；>0 则开启深度思考") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                        } else {
+                            // 自定义 / DeepSeek 配置 (OpenAI 兼容协议)
                             Text(
-                                text = "唤起钱迹完成记账后，自动切回本网关保持前台常亮",
-                                style = MaterialTheme.typography.labelSmall,
+                                text = "快捷预设：",
+                                fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        }
-                        Switch(
-                            checked = autoReturn,
-                            onCheckedChange = {
-                                autoReturn = it
-                                prefs.autoReturn = it
-                                showAutoSavedHint = true
-                            }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Gemini API Key
-                    OutlinedTextField(
-                        value = apiKey,
-                        onValueChange = {
-                            apiKey = it
-                            saveAll(showToast = false)
-                        },
-                        label = { Text("Gemini API Key (实时自动保存)") },
-                        placeholder = { Text("AIzaSy...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
-                                Icon(
-                                    imageVector = if (isApiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = "Toggle API Key visibility"
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                FilterChip(
+                                    selected = customAiBaseUrl == "https://api.deepseek.com",
+                                    onClick = {
+                                        customAiBaseUrl = "https://api.deepseek.com"
+                                        customAiModel = "deepseek-chat"
+                                        saveAll(showToast = false)
+                                    },
+                                    label = { Text("DeepSeek 官方", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = customAiBaseUrl == "https://api.siliconflow.cn/v1",
+                                    onClick = {
+                                        customAiBaseUrl = "https://api.siliconflow.cn/v1"
+                                        customAiModel = "deepseek-ai/DeepSeek-V3"
+                                        saveAll(showToast = false)
+                                    },
+                                    label = { Text("硅基流动", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = customAiBaseUrl == "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                                    onClick = {
+                                        customAiBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+                                        customAiModel = "deepseek-v3"
+                                        saveAll(showToast = false)
+                                    },
+                                    label = { Text("阿里百炼", fontSize = 11.sp) }
                                 )
                             }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            OutlinedTextField(
+                                value = customAiBaseUrl,
+                                onValueChange = {
+                                    customAiBaseUrl = it
+                                    saveAll(showToast = false)
+                                },
+                                label = { Text("API Base URL (OpenAI 兼容端点)") },
+                                placeholder = { Text("https://api.deepseek.com") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            OutlinedTextField(
+                                value = customAiApiKey,
+                                onValueChange = {
+                                    customAiApiKey = it
+                                    saveAll(showToast = false)
+                                },
+                                label = { Text("API Key (Bearer Token)") },
+                                placeholder = { Text("sk-...") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                visualTransformation = if (isCustomKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { isCustomKeyVisible = !isCustomKeyVisible }) {
+                                        Icon(
+                                            imageVector = if (isCustomKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = "切换可见性"
+                                        )
+                                    }
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            OutlinedTextField(
+                                value = customAiModel,
+                                onValueChange = {
+                                    customAiModel = it
+                                    saveAll(showToast = false)
+                                },
+                                label = { Text("模型名称 (Model Name)") },
+                                placeholder = { Text("deepseek-chat") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
                         }
-                    )
+                    }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // 语音输入与解析模式切换 (Gemini 专用 ASR 转写 vs 原生多模态直接上传)
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    // ==========================================
+                    // 分区 2：语音识别服务 (ASR)
+                    // ==========================================
+                    SectionCard(
+                        icon = Icons.Default.Mic,
+                        title = "语音识别服务 (ASR)",
+                        subtitle = "负责将录音极速转录为中文文本"
                     ) {
+                        // 语音识别开关
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -228,17 +395,20 @@ fun SettingsCard(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (asrModeEnabled) "语音模式：Gemini 专用 ASR 转写 (推荐)" else "语音模式：原生多模态直接上传",
+                                    text = if (asrModeEnabled || aiProvider == "custom") "启用两阶段转文字模式" else "原生多模态直接上传模式",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp,
-                                    color = if (asrModeEnabled) SuccessGreen else MaterialTheme.colorScheme.primary
+                                    color = if (asrModeEnabled || aiProvider == "custom") SuccessGreen else MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (asrModeEnabled)
-                                        "开启：录音后经 Google 官方 gemini-3.5-transcribe 极速转写，再提取账单（超快且规整，共享同一 API Key）"
-                                    else
-                                        "关闭：直接将录音音频文件作为多模态载荷上传至 Gemini（需等待音频特征编码）",
+                                    text = if (aiProvider == "custom") {
+                                        "当前选择自定义大模型 (纯文本)，必须经由 ASR 转写为文字后提取"
+                                    } else if (asrModeEnabled) {
+                                        "开启：录音后先由专用 ASR 转为文字，再交由 Gemini 提取账单"
+                                    } else {
+                                        "关闭：直接将录音音频多模态上传至 Gemini（需等待音频特征编码）"
+                                    },
                                     fontSize = 11.sp,
                                     lineHeight = 15.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -246,7 +416,8 @@ fun SettingsCard(
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Switch(
-                                checked = asrModeEnabled,
+                                checked = asrModeEnabled || aiProvider == "custom",
+                                enabled = aiProvider != "custom", // 自定义模型强制走 ASR
                                 onCheckedChange = {
                                     asrModeEnabled = it
                                     prefs.asrModeEnabled = it
@@ -255,108 +426,272 @@ fun SettingsCard(
                             )
                         }
 
-                        if (asrModeEnabled) {
-                            Spacer(modifier = Modifier.height(8.dp))
+                        if (asrModeEnabled || aiProvider == "custom") {
+                            Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "⚡ 转录引擎：gemini-3.5-transcribe (Smart 智能转写 · 共享同一 API Key)",
-                                fontSize = 11.sp,
+                                text = "选择语音识别服务商：",
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = SuccessGreen
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ProviderTab(
+                                    title = "百度语音识别 (国内极速)",
+                                    selected = asrProvider == "baidu",
+                                    onClick = {
+                                        asrProvider = "baidu"
+                                        saveAll(showToast = false)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                ProviderTab(
+                                    title = "Google Gemini ASR",
+                                    selected = asrProvider == "gemini",
+                                    onClick = {
+                                        asrProvider = "gemini"
+                                        saveAll(showToast = false)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            if (asrProvider == "baidu") {
+                                // 百度语音识别凭证
+                                OutlinedTextField(
+                                    value = baiduApiKey,
+                                    onValueChange = {
+                                        baiduApiKey = it
+                                        saveAll(showToast = false)
+                                    },
+                                    label = { Text("百度 API Key (Client ID)") },
+                                    placeholder = { Text("百度智能云应用 API Key") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                OutlinedTextField(
+                                    value = baiduSecretKey,
+                                    onValueChange = {
+                                        baiduSecretKey = it
+                                        saveAll(showToast = false)
+                                    },
+                                    label = { Text("百度 Secret Key (Client Secret)") },
+                                    placeholder = { Text("百度智能云应用 Secret Key") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = if (isBaiduSecretVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { isBaiduSecretVisible = !isBaiduSecretVisible }) {
+                                            Icon(
+                                                imageVector = if (isBaiduSecretVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = "切换可见性"
+                                            )
+                                        }
+                                    }
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Text(
+                                    text = "识别模型版本：",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                baiduDevPid = 1537
+                                                saveAll(showToast = false)
+                                            }
+                                            .padding(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = baiduDevPid == 1537,
+                                            onClick = {
+                                                baiduDevPid = 1537
+                                                saveAll(showToast = false)
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Column {
+                                            Text("标准版 (1537)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("普通话·带标点·通用稳定", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                baiduDevPid = 80001
+                                                saveAll(showToast = false)
+                                            }
+                                            .padding(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = baiduDevPid == 80001,
+                                            onClick = {
+                                                baiduDevPid = 80001
+                                                saveAll(showToast = false)
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Column {
+                                            Text("极速版 (80001)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("GPU集群·更快响应·高准确率", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .padding(10.dp)
+                                ) {
+                                    Text(
+                                        text = "⚡ 使用 Google 官方转写专用大模型 gemini-3.5-transcribe，共享上方配置的 Gemini API Key，自动启用 Smart 智能规整模式。",
+                                        fontSize = 11.sp,
+                                        lineHeight = 16.sp,
+                                        color = SuccessGreen
+                                    )
+                                }
+                            }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Gemini Model
-                    OutlinedTextField(
-                        value = geminiModel,
-                        onValueChange = {
-                            geminiModel = it
-                            saveAll(showToast = false)
-                        },
-                        label = { Text("Gemini 模型名称") },
-                        placeholder = { Text("gemini-3.5-flash-lite") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+                    // ==========================================
+                    // 分区 3：账本与分类偏好
+                    // ==========================================
+                    SectionCard(
+                        icon = Icons.Default.Book,
+                        title = "账本与分类偏好",
+                        subtitle = "设置钱迹记账时的默认账本、分类和资产账户"
+                    ) {
+                        // 记账后自动跳回本网关开关
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "记账后自动跳回本网关",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "唤起钱迹保存账单后，自动切回本网关保持常亮",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = autoReturn,
+                                onCheckedChange = {
+                                    autoReturn = it
+                                    prefs.autoReturn = it
+                                    showAutoSavedHint = true
+                                }
+                            )
+                        }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    // 思考预算 / 推理等级 (Thinking Budget)
-                    OutlinedTextField(
-                        value = thinkingBudgetText,
-                        onValueChange = {
-                            thinkingBudgetText = it.filter { char -> char.isDigit() }
-                            saveAll(showToast = false)
-                        },
-                        label = { Text("思考预算 / Thinking Budget (0=极速关闭深度思考)") },
-                        placeholder = { Text("0") },
-                        supportingText = { Text("0=关闭深度思考 (1~2秒极速返回，推荐用于记账)；>0 则启用 CoT 深度思考") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+                        // 默认账本
+                        OutlinedTextField(
+                            value = defaultBook,
+                            onValueChange = {
+                                defaultBook = it
+                                saveAll(showToast = false)
+                            },
+                            label = { Text("默认账本名称 (例如: 日常账本)") },
+                            placeholder = { Text("日常账本") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    // 分类列表
-                    OutlinedTextField(
-                        value = categories,
-                        onValueChange = {
-                            categories = it
-                            saveAll(showToast = false)
-                        },
-                        label = { Text("分类枚举列表 (支持换行或逗号)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                        maxLines = 5
-                    )
+                        // 分类列表
+                        OutlinedTextField(
+                            value = categories,
+                            onValueChange = {
+                                categories = it
+                                saveAll(showToast = false)
+                            },
+                            label = { Text("分类枚举列表 (支持换行或逗号)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 3,
+                            maxLines = 5
+                        )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    // 资产列表
-                    OutlinedTextField(
-                        value = accounts,
-                        onValueChange = {
-                            accounts = it
-                            saveAll(showToast = false)
-                        },
-                        label = { Text("资产账户列表 (留空则不记录账户)") },
-                        placeholder = { Text("留空默认不记录账户") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+                        // 资产列表
+                        OutlinedTextField(
+                            value = accounts,
+                            onValueChange = {
+                                accounts = it
+                                saveAll(showToast = false)
+                            },
+                            label = { Text("资产账户列表 (留空则不记录账户)") },
+                            placeholder = { Text("留空默认不记录账户") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // 默认账本
-                    OutlinedTextField(
-                        value = defaultBook,
-                        onValueChange = {
-                            defaultBook = it
-                            saveAll(showToast = false)
-                        },
-                        label = { Text("默认账本名称 (例如: 日常账本)") },
-                        placeholder = { Text("日常账本") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+                    // ==========================================
+                    // 分区 4：局域网网关设置
+                    // ==========================================
+                    SectionCard(
+                        icon = Icons.Default.Dns,
+                        title = "局域网网关与安全",
+                        subtitle = "供外部设备、快捷指令调用本机的 API 凭证"
+                    ) {
+                        OutlinedTextField(
+                            value = apiToken,
+                            onValueChange = {
+                                apiToken = it
+                                saveAll(showToast = false)
+                            },
+                            label = { Text("局域网 API Bearer Token (可选鉴权)") },
+                            placeholder = { Text("留空表示局域网内免密访问") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Bearer Token
-                    OutlinedTextField(
-                        value = apiToken,
-                        onValueChange = {
-                            apiToken = it
-                            saveAll(showToast = false)
-                        },
-                        label = { Text("局域网 API Bearer Token (可选鉴权)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
                     // 保存并收起按钮
                     Button(
@@ -365,7 +700,7 @@ fun SettingsCard(
                             isExpanded = false
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
                     ) {
                         Icon(imageVector = Icons.Default.Save, contentDescription = "保存")
@@ -375,5 +710,74 @@ fun SettingsCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SectionCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    content: @Composable () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .padding(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = PrimaryBlue,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
+        )
+
+        content()
+    }
+}
+
+@Composable
+private fun ProviderTab(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bgColor = if (selected) PrimaryBlue else MaterialTheme.colorScheme.surface
+    val contentColor = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
+    val borderColor = if (selected) PrimaryBlue else MaterialTheme.colorScheme.outlineVariant
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = title,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = contentColor
+        )
     }
 }

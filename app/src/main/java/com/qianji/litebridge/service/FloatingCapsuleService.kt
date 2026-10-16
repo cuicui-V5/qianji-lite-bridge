@@ -461,8 +461,9 @@ class FloatingCapsuleService : Service() {
 
         val useAsr = app.prefs.asrModeEnabled
         updateCapsuleStyle(CapsuleState.PROCESSING, "⚡", if (useAsr) "高速转写中..." else "AI解析中...")
-        if (useAsr) {
-            app.addLog("🤖 [悬浮胶囊] 录音完成 (${duration}ms)，正在调用 gemini-3.5-transcribe 高速转写...")
+        val asrDesc = if (app.prefs.asrProvider == "baidu") "百度语音识别" else "gemini-3.5-transcribe"
+        if (app.prefs.aiProvider == "custom" || app.prefs.asrModeEnabled) {
+            app.addLog("🤖 [悬浮胶囊] 录音完成 (${duration}ms)，正在调用 $asrDesc 转写...")
         } else {
             app.addLog("🤖 [悬浮胶囊] 录音完成 (${duration}ms)，正在调用 Gemini 进行多模态解析...")
         }
@@ -470,14 +471,8 @@ class FloatingCapsuleService : Service() {
         serviceScope.launch {
             try {
                 val bills = withContext(Dispatchers.IO) {
-                    if (useAsr) {
-                        app.geminiService.parseAudioWithAsr(file) { progressMsg ->
-                            app.addLog(progressMsg)
-                        }
-                    } else {
-                        app.geminiService.parseAudio(file) { progressMsg ->
-                            app.addLog(progressMsg)
-                        }
+                    app.aiServiceHub.parseAudio(file) { progressMsg ->
+                        app.addLog(progressMsg)
                     }
                 }
 

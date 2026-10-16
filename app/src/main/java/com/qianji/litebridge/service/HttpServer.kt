@@ -157,7 +157,7 @@ class HttpServer(
 
         return try {
             val bills = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-                geminiService.parseText(textPrompt) { msg -> onLog(msg) }
+                com.qianji.litebridge.QianjiApp.instance.aiServiceHub.parseText(textPrompt) { msg -> onLog(msg) }
             }
             queue.enqueueAll(bills)
             onLog("✨ AI 成功提取并入队 ${bills.size} 笔账单")
