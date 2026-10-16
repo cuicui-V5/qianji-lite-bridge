@@ -104,12 +104,22 @@ class CustomAiService(
         }
 
         // 自动重试机制 (最多 2 次尝试：初次 + 1次自动重试)
+        var currentThinkingType = effectiveThinkingType
         var lastException: Exception? = null
         for (attempt in 1..2) {
             val startTime = System.currentTimeMillis()
             if (attempt > 1) {
-                onProgress("🔄 正在自动重试第 ${attempt - 1} 次请求...")
-                delay(800)
+                if (effectiveThinkingType == "disabled" && currentThinkingType == "disabled") {
+                    currentThinkingType = "enabled"
+                    payloadObj.put("thinking", JSONObject().apply {
+                        put("type", "enabled")
+                    })
+                    payloadObj.put("reasoning_effort", "low")
+                    onProgress("🔄 极速直出未提取到有效金额，自动重试升格为 [low 推理模式] 深度分析...")
+                } else {
+                    onProgress("🔄 正在自动重试第 ${attempt - 1} 次请求...")
+                }
+                delay(600)
             }
 
             var (responseCode, responseBody) = try {

@@ -374,11 +374,8 @@ class FloatingCapsuleService : Service() {
             wakeLock?.acquire(60_000) // 最长持有 60 秒唤醒锁，防止锁屏或休眠切断麦克风
         } catch (_: Exception) {}
 
-        if (app.prefs.asrModeEnabled) {
-            app.addLog("🎙️ [悬浮胶囊] 启动录音 (Gemini ASR 模式)，按住说话...")
-        } else {
-            app.addLog("🎙️ [悬浮胶囊] 启动录音 (原生多模态模式)，按住说话...")
-        }
+        val modeDesc = app.prefs.getModeSummary()
+        app.addLog("🎙️ [悬浮胶囊] 启动录音 ($modeDesc)，按住说话...")
 
         val audioFile = File(cacheDir, "float_record_${recordStartTime}.m4a")
         currentRecordFile = audioFile
