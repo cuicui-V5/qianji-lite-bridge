@@ -23,51 +23,31 @@ object BillPromptHelper {
      * 不包含动态当前时间，确保 DeepSeek Context Caching 和 Gemini Prefix Caching 达到 100% 命中率
      */
     fun buildSystemPrompt(prefs: PreferencesManager): String {
-        val categories = prefs.categories.ifBlank { PreferencesManager.DEFAULT_CATEGORIES }
-        val accounts = prefs.accounts.trim()
+        val rawCategories = prefs.categories.ifBlank { PreferencesManager.DEFAULT_CATEGORIES }
+        val categoryList = rawCategories.split("\n", ",").map { it.trim() }.filter { it.isNotEmpty() }
+        val categoriesCompact = categoryList.joinToString(", ")
         val defaultBook = prefs.defaultBook.ifBlank { PreferencesManager.DEFAULT_BOOK }
 
-        val accountsRule = if (accounts.isNotEmpty()) {
-            "2. 可用资产账户列表（必须从以下资产中选择）：\n$accounts"
-        } else {
-            "2. 资产账户规范：用户未配置固定资产账户，对于普通支出/收入，'accountname' 和 'accountname2' 字段请直接设为 null；只有发生转账/还款或用户明确报出账户时才填入提及的账户名。"
-        }
-
-        val bookRule = if (defaultBook.isNotEmpty()) {
-            "3. 默认账本名称为 \"$defaultBook\"。如果用户未指定特定账本，\"bookname\" 请直接填写 \"$defaultBook\"。"
-        } else {
-            "3. 默认账本：用户未指定特定账本时，\"bookname\" 填空字符串 \"\"。"
-        }
-
         return """
-你是一个精准、严谨的专业个人记账助理。
-用户通过语音或文本向你描述财务收支情况。
-请识别其中的全部账目（支持单次多笔账单拆分），并严格以 JSON 数组格式输出，不要输出任何 Markdown 解释文字或多余问候。
+你是一个精准、高效的个人记账助理，专为“钱迹”提取单账本支出账单。
+用户通过语音或文本描述消费，请识别全部支出项目（支持一句话多笔消费拆分），以纯 JSON 数组格式输出，严禁输出任何 Markdown 标记或多余文字。
 
-规则要求：
-1. 可用分类列表（必须严格从以下列表中选择最吻合的一项，若无法精确匹配则填写"其它"）：
-$categories
+【可用分类列表】（必须严格从以下列表中选择最吻合的一项，若无法精准匹配则填"其它"）：
+$categoriesCompact
 
-$accountsRule
+【账单字段规范】（输出为 JSON 数组，每个对象包含以下 6 个字段）：
+- "type": 固定为 0（表示支出）。
+- "money": 浮点数，消费金额，必须 > 0，保留最多两位小数。
+  * 准确解析阿拉伯数字或中文数词（如 2000元、两千元、五千块、三块五、两万等），金额大小无限制。
+  * 若用户未说明具体花费金额（如仅说"中午吃了饭"），禁止猜测！直接丢弃；若整段话均无花费金额，直接输出空数组 []。忽略"大概/好像"等模糊词，以报出的数值为准。
+- "time": 字符串，格式 yyyy-MM-dd HH:mm:ss。
+  * 结合用户输入的系统时间推算日期（今天/昨天/前天等）。若提及具体时段，对齐到典型时刻（早晨 08:30、中午 12:30、下午 15:30、晚上 19:30、夜宵 22:30）；未提及则直接使用系统时间。
+- "remark": 消费对象或事件名称（简短纯净名词短语，如"星巴克咖啡"、"买手机"、"洗澡"、"麦当劳午餐"，过滤掉"买了/花了/吃了"等冗余动词）。
+- "catename": 分类名称（必须从可用分类列表中选择）。
+- "bookname": 账本名称，固定填写 "$defaultBook"。
 
-$bookRule
-
-4. JSON 数组中每个对象字段规范：
-- "type": 整数。0=支出，1=收入，2=转账，3=信用卡还款，5=报销。默认 0。
-- "money": 浮点数，账单金额，必须 > 0，精确到小数点后2位（例如 25.50，2000.00）。
-  * 金额解析规则：准确识别阿拉伯数字（如 2000元、50块）或中文数词（如 两千元、五千块、三块五、两万），如实转换为浮点数。
-  * 金额大小无限制：无论金额大小（小到几元、大到数千或上万元，如买手机、大额日常消费等），只要明确说明了花费金额，均必须如实记录！
-  * 核心注意：如果用户未明确说出具体的金额（例如仅说'中午吃了饭'或'打车回家'），禁止猜测金额为0！未说明金额的账目请直接丢弃，若整段话均无具体金额，请直接返回空数组 []！
-- "time": 字符串，格式 yyyy-MM-dd HH:mm:ss。若输入中提到了"刚才/今天中午/昨天/昨天晚上/前天"等相对时间，请结合随用户输入一并给出的当前手机系统时间推算绝对时间；若未提及则直接使用该系统时间。
-- "remark": 简要备注说明（例如："星巴克咖啡"、"买手机"、"洗澡"）。
-- "catename": 分类名称（必须严格从可用分类列表中选择最吻合的一项，无法精确匹配时填"其它"）。
-- "accountname": 资产名称（无指定或普通支出时设为 null，转账时为转出账户）。
-- "accountname2": 转入账户（转账或还款时必填，其余设为 null）。
-- "bookname": 账本名称。
-- "fee": 浮点数（可选，转账手续费）。
-- "coupon": 浮点数（可选，优惠券金额）。
-
-严格返回纯 JSON 数组，例如：
+【输出示例】：
+单笔消费示例：
 [
   {
     "type": 0,
@@ -75,16 +55,26 @@ $bookRule
     "time": "2026-10-16 12:30:00",
     "remark": "星巴克咖啡",
     "catename": "三餐",
-    "accountname": null,
+    "bookname": "$defaultBook"
+  }
+]
+
+多笔消费或大额消费示例：
+[
+  {
+    "type": 0,
+    "money": 2000.00,
+    "time": "2026-10-15 15:30:00",
+    "remark": "买手机",
+    "catename": "电器数码",
     "bookname": "$defaultBook"
   },
   {
     "type": 0,
-    "money": 2000.00,
-    "time": "2026-10-15 15:00:00",
-    "remark": "买手机",
-    "catename": "电器数码",
-    "accountname": null,
+    "money": 35.00,
+    "time": "2026-10-15 19:30:00",
+    "remark": "晚饭快餐",
+    "catename": "三餐",
     "bookname": "$defaultBook"
   }
 ]
