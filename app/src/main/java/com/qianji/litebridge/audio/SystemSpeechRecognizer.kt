@@ -12,10 +12,11 @@ import android.speech.RecognitionListener
 import android.speech.RecognitionService
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import java.util.Locale
 
 /**
  * 手机系统原生语音识别封装 (SpeechRecognizer)
- * 深度适配三星 One UI、Google 语音服务及第三方引擎，支持显式组件绑定、引擎自选与防踩坑切换
+ * 深度适配三星 One UI、Galaxy AI 本地离线语言包、Google 语音服务及第三方引擎
  */
 class SystemSpeechRecognizer(private val context: Context) {
 
@@ -67,19 +68,64 @@ class SystemSpeechRecognizer(private val context: Context) {
         }
 
         val engines = mutableListOf<AsrEngineItem>()
+        val isSamsungDevice = Build.MANUFACTURER.contains("samsung", ignoreCase = true)
+        val isOnDeviceAvailable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+            } catch (_: Exception) {
+                false
+            }
+        } else {
+            false
+        }
 
-        // 1. 自动优选 (优先 Google / 三星原厂，跳过 Home Assistant 等第三方助手)
+        // 1. 自动优选 (若是三星设备优先选用三星本地离线语言包，零延迟且无网络要求)
         engines.add(
             AsrEngineItem(
                 id = "auto",
-                displayName = "自动优选 (推荐·优先 Google/三星)",
+                displayName = "自动优选 (三星离线语音优先)",
                 componentName = null,
                 isInstalled = true,
-                description = "优先匹配系统设置的 Google 或三星官方引擎，跳过 Home Assistant"
+                description = "优先匹配系统已下载的三星官方离线语言包，零延迟极速识别"
             )
         )
 
-        // 2. Google 语音识别 (强制指定 Google App 官方组件)
+        // 2. 三星本地端侧离线语音 (直接使用设置里下载的「中文(中国) 语音输入」语言包)
+        engines.add(
+            AsrEngineItem(
+                id = "samsung_ondevice",
+                displayName = "三星本地端侧语音 (已装语言包·离线)",
+                componentName = null,
+                isInstalled = isOnDeviceAvailable || isSamsungDevice,
+                description = "直接调用系统「中文(中国) 语音输入」离线模型，无网络请求，毫秒级响应"
+            )
+        )
+
+        // 3. 三星 Bixby 语音识别 (One UI 默认通道)
+        val samsungResolved = resolveList.find {
+            it.serviceInfo.packageName.contains("bixby") ||
+                    it.serviceInfo.packageName.contains("samsung") ||
+                    it.serviceInfo.packageName.contains("svoice")
+        }
+        val isSamsungInstalled = samsungResolved != null || isSamsungDevice || try {
+            pm.getPackageInfo("com.samsung.android.bixby.agent", 0) != null
+        } catch (_: Exception) {
+            false
+        }
+        val samsungComp = samsungResolved?.let { ComponentName(it.serviceInfo.packageName, it.serviceInfo.name) }
+            ?: ComponentName("com.samsung.android.bixby.agent", "com.samsung.android.bixby.agent.mainui.voiceinteraction.RecognitionServiceTrampoline")
+
+        engines.add(
+            AsrEngineItem(
+                id = "samsung_bixby",
+                displayName = "三星 Bixby 语音服务 (One UI 原厂)",
+                componentName = samsungComp,
+                isInstalled = isSamsungInstalled,
+                description = "通过三星 Bixby 系统服务通道进行识别"
+            )
+        )
+
+        // 4. Google 语音识别 (Google App 官方组件)
         val isGoogleAppInstalled = try {
             pm.getPackageInfo("com.google.android.googlequicksearchbox", 0) != null
         } catch (_: Exception) {
@@ -98,42 +144,21 @@ class SystemSpeechRecognizer(private val context: Context) {
         engines.add(
             AsrEngineItem(
                 id = "google",
-                displayName = "Google 语音识别 (Google App)",
+                displayName = "Google 语音识别 (需海外网络/Google语言包)",
                 componentName = googleTargetComp,
                 isInstalled = isGoogleAppInstalled || isGoogleTtsInstalled || resolvedGoogle != null,
-                description = "调用系统安装的 Google 服务进行毫秒级转写"
+                description = "调用 Google App 官方服务（若未下载 Google 专用离线包需能连通 Google）"
             )
         )
 
-        // 3. 三星 Bixby 语音识别 (三星 One UI 原厂)
-        val samsungResolved = resolveList.find {
-            it.serviceInfo.packageName.contains("bixby") || it.serviceInfo.packageName.contains("samsung")
-        }
-        val isSamsungInstalled = samsungResolved != null || try {
-            pm.getPackageInfo("com.samsung.android.bixby.agent", 0) != null
-        } catch (_: Exception) {
-            false
-        }
-        val samsungComp = samsungResolved?.let { ComponentName(it.serviceInfo.packageName, it.serviceInfo.name) }
-            ?: ComponentName("com.samsung.android.bixby.agent", "com.samsung.android.bixby.agent.mainui.voiceinteraction.RecognitionServiceTrampoline")
-
-        engines.add(
-            AsrEngineItem(
-                id = "samsung",
-                displayName = "三星 Bixby 语音识别 (One UI 原厂)",
-                componentName = samsungComp,
-                isInstalled = isSamsungInstalled,
-                description = "三星手机系统内置的 Bixby 语音转文字服务"
-            )
-        )
-
-        // 4. 解析系统内发现的其它所有 RecognitionService
+        // 5. 解析系统内发现的其它所有 RecognitionService
         resolveList.forEach { ri ->
             val pkg = ri.serviceInfo.packageName
             val comp = ComponentName(pkg, ri.serviceInfo.name)
             if (pkg != "com.google.android.googlequicksearchbox" &&
                 pkg != "com.google.android.tts" &&
-                !pkg.contains("bixby")) {
+                !pkg.contains("bixby") &&
+                !pkg.contains("samsung")) {
                 val label = when {
                     pkg == "io.homeassistant.companion.android" -> "Home Assistant 语音 (需配置Assist)"
                     pkg.contains("iflytek") -> "科大讯飞语音服务"
@@ -152,14 +177,14 @@ class SystemSpeechRecognizer(private val context: Context) {
             }
         }
 
-        // 5. 系统默认助手通道 (不指定 ComponentName)
+        // 6. 系统原生默认通道 (不指定 ComponentName)
         engines.add(
             AsrEngineItem(
                 id = "system_default",
                 displayName = "系统原生默认通道 (随系统数字助手)",
                 componentName = null,
                 isInstalled = true,
-                description = "由 Android 系统按照 VOICE_RECOGNITION_SERVICE 规则解析"
+                description = "由 Android 系统按照 VOICE_RECOGNITION_SERVICE 规则自动指派"
             )
         )
 
@@ -183,17 +208,26 @@ class SystemSpeechRecognizer(private val context: Context) {
     }
 
     private fun resolveActiveEngine(preferredChoice: String, engines: List<AsrEngineItem>): AsrEngineItem {
+        val isSamsungDevice = Build.MANUFACTURER.contains("samsung", ignoreCase = true)
         return when (preferredChoice) {
+            "samsung_ondevice" -> engines.find { it.id == "samsung_ondevice" } ?: engines.first()
+            "samsung_bixby", "samsung" -> engines.find { it.id == "samsung_bixby" } ?: engines.first()
             "google" -> engines.find { it.id == "google" } ?: engines.first()
-            "samsung" -> engines.find { it.id == "samsung" } ?: engines.first()
             "system_default" -> engines.find { it.id == "system_default" } ?: engines.first()
             "auto" -> {
-                // 自动模式：优先选用 Google（用户在系统数字助手中指定）；其次三星 Bixby；最后避开 Home Assistant 的其它服务
-                engines.find { it.id == "google" && it.isInstalled }
-                    ?: engines.find { it.id == "samsung" && it.isInstalled }
-                    ?: engines.find { it.isInstalled && !it.id.contains("homeassistant") && it.componentName != null }
-                    ?: engines.find { it.id == "system_default" }
-                    ?: engines.first()
+                // 自动模式：三星设备首选三星本地离线端侧语言包！
+                if (isSamsungDevice) {
+                    engines.find { it.id == "samsung_ondevice" && it.isInstalled }
+                        ?: engines.find { it.id == "samsung_bixby" && it.isInstalled }
+                        ?: engines.find { it.id == "google" && it.isInstalled }
+                        ?: engines.find { it.id == "system_default" }
+                        ?: engines.first()
+                } else {
+                    engines.find { it.id == "google" && it.isInstalled }
+                        ?: engines.find { it.id == "samsung_ondevice" && it.isInstalled }
+                        ?: engines.find { it.id == "system_default" }
+                        ?: engines.first()
+                }
             }
             else -> engines.find { it.id == preferredChoice }
                 ?: engines.find { it.id == "auto" }
@@ -222,10 +256,25 @@ class SystemSpeechRecognizer(private val context: Context) {
                 val targetEngine = resolveActiveEngine(preferredChoice, engines)
                 val targetComp = targetEngine.componentName
 
-                val recognizer = if (targetComp != null) {
-                    SpeechRecognizer.createSpeechRecognizer(context, targetComp)
-                } else {
-                    SpeechRecognizer.createSpeechRecognizer(context)
+                val recognizer = when (targetEngine.id) {
+                    "samsung_ondevice" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            try {
+                                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                            } catch (_: Exception) {
+                                SpeechRecognizer.createSpeechRecognizer(context)
+                            }
+                        } else {
+                            SpeechRecognizer.createSpeechRecognizer(context)
+                        }
+                    }
+                    else -> {
+                        if (targetComp != null) {
+                            SpeechRecognizer.createSpeechRecognizer(context, targetComp)
+                        } else {
+                            SpeechRecognizer.createSpeechRecognizer(context)
+                        }
+                    }
                 }
 
                 speechRecognizer = recognizer
@@ -243,9 +292,9 @@ class SystemSpeechRecognizer(private val context: Context) {
                             SpeechRecognizer.ERROR_AUDIO -> "音频录制错误 (ERROR_AUDIO)"
                             SpeechRecognizer.ERROR_CLIENT -> {
                                 if (targetEngine.id == "google") {
-                                    "Google 语音服务异常 (ERROR_CLIENT)。请确认 Google App 联网正常，或在设置中尝试切换为三星 Bixby 语音"
+                                    "Google 语音异常 (ERROR_CLIENT)。国内网络无法直连 Google，建议在设置中切换为「三星本地端侧语音」！"
                                 } else if (targetEngine.displayName.contains("Home Assistant")) {
-                                    "Home Assistant 语音异常 (ERROR_CLIENT)。未连接到 HA Assist 语音流水线，请在设置中切换为 Google 或三星 Bixby"
+                                    "Home Assistant 异常 (ERROR_CLIENT)。未连接到局域网 HA 语音流水线，请在设置中切换为「三星本地端侧语音」"
                                 } else {
                                     "客户端调用异常 (ERROR_CLIENT)"
                                 }
@@ -257,7 +306,7 @@ class SystemSpeechRecognizer(private val context: Context) {
                             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "语音识别引擎正忙 (ERROR_RECOGNIZER_BUSY)"
                             SpeechRecognizer.ERROR_SERVER -> "服务端识别错误 (ERROR_SERVER)"
                             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "等待说话超时 (ERROR_SPEECH_TIMEOUT)"
-                            10 -> "当前语言未支持 (ERROR_LANGUAGE_NOT_SUPPORTED)"
+                            10 -> "当前语言未支持 (ERROR_LANGUAGE_NOT_SUPPORTED)。Google 未下载离线包，请在设置中切换为已安装好的「三星本地端侧语音」！"
                             11 -> "语言模型包未就绪 (ERROR_LANGUAGE_UNAVAILABLE)"
                             12 -> "语音引擎断开连接 (ERROR_SERVER_DISCONNECTED)"
                             13 -> "调用频次受限 (ERROR_TOO_MANY_REQUESTS)"
@@ -297,10 +346,17 @@ class SystemSpeechRecognizer(private val context: Context) {
 
                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    
+                    // 传入全套中文语言标识以确保各家引擎兼容
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "zh-CN")
                     putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "zh-CN")
-                    putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("zh-CN", "cmn-Hans-CN", "en-US"))
+                    putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("zh-CN", "zh_CN", "cmn-Hans-CN", "zh"))
+                    
+                    if (targetEngine.id == "samsung_ondevice" || targetEngine.id == "auto") {
+                        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                    }
+                    
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 }

@@ -25,6 +25,8 @@
         <package android:name="com.samsung.android.bixby.agent" />
         <package android:name="com.samsung.android.honeyboard" />
         <package android:name="com.samsung.android.svoice" />
+        <package android:name="com.samsung.android.svoiceime" />
+        <package android:name="com.samsung.android.scs" />
         <package android:name="com.google.android.googlequicksearchbox" />
         <package android:name="com.google.android.tts" />
         <package android:name="com.iflytek.speechcloud" />
