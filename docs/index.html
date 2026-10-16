@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>钱迹 AI 记账网关 (Qianji AI Bridge) - 极速双引擎 · 深度思考自适应 · 局域网记账</title>
+  <meta name="description" content="专为钱迹 App 设计的个人智能语音与局域网记账网关。支持百度语音识别极速版 + DeepSeek / 自定义 AI 双阶段流水线，Gemini 原生多模态直传，深度思考智能自适应，局域网 HTTP API 及全局悬浮胶囊。" />
+  <meta name="keywords" content="钱迹, 自动记账, 语音记账, DeepSeek, Gemini, 百度语音识别, Android, HTTP网关, AI记账, 钱迹API" />
+  <link rel="icon" type="image/png" href="icon.png" />
+  <meta property="og:title" content="钱迹 AI 记账网关 - 极速双引擎智能记账助手" />
+  <meta property="og:description" content="一句话自动拆分多笔账单，毫秒级转写与推理，局域网 RESTful 统一网关，严格遵循 3.2s 安全限流。" />
+  <meta property="og:image" content="icon.png" />
+  <meta property="og:type" content="website" />
+  
+  <style>
+    :root {
+      --bg: #090d16;
+      --bg-card: rgba(18, 24, 38, 0.7);
+      --bg-card-hover: rgba(28, 38, 58, 0.85);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(59, 130, 246, 0.5);
+      --primary: #3b82f6;
+      --primary-glow: rgba(59, 130, 246, 0.35);
+      --accent: #06b6d4;
+      --accent-glow: rgba(6, 182, 212, 0.3);
+      --success: #10b981;
+      --danger: #ef4444;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.18), transparent 70%),
+        radial-gradient(circle at 90% 40%, rgba(6, 182, 212, 0.1), transparent 50%),
+        radial-gradient(circle at 10% 80%, rgba(139, 92, 246, 0.1), transparent 50%);
+      background-attachment: fixed;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    /* 顶部导航 */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      background: rgba(9, 13, 22, 0.75);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+    .brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: 9px;
+      box-shadow: 0 4px 12px var(--primary-glow);
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.75rem;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+    .nav-links a:hover {
+      color: var(--text);
+      transition: color 0.2s;
+    }
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.55rem 1.15rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border-radius: 9999px;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #2563eb, #0284c7);
+      color: #ffffff;
+      box-shadow: 0 4px 16px var(--primary-glow);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #1d4ed8, #0369a1);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Hero 区域 */
+    .hero {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 5rem 1.5rem 3rem;
+      text-align: center;
+      position: relative;
+    }
+    .version-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.9rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: 9999px;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #60a5fa;
+      margin-bottom: 1.5rem;
+    }
+    .version-badge span {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #3b82f6;
+      box-shadow: 0 0 8px #3b82f6;
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 5.5vw, 4.2rem);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero h1 .gradient-text {
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      max-width: 760px;
+      margin: 0 auto 2.5rem;
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+    .hero-cta {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 3.5rem;
+    }
+    .hero-cta .btn {
+      padding: 0.85rem 1.8rem;
+      font-size: 1rem;
+    }
+
+    /* 视觉模拟展示卡片 (Mockup) */
+    .mockup-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      max-width: 1100px;
+      margin: 0 auto 5rem;
+      text-align: left;
+    }
+    .mockup-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      position: relative;
+      overflow: hidden;
+    }
+    .mockup-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--primary), transparent);
+    }
+    .mockup-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .dot-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .bill-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 0.9rem;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      margin-bottom: 0.6rem;
+    }
+    .bill-item:last-child {
+      margin-bottom: 0;
+    }
+    .bill-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .badge {
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+    }
+    .bill-info .title {
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .bill-info .time {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .bill-money {
+      font-weight: 700;
+      font-size: 1rem;
+      color: #f87171;
+    }
+    .bill-money.income {
+      color: #34d399;
+    }
+
+    /* 终端控制台模拟 */
+    .terminal-box {
+      background: #060911;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      line-height: 1.6;
+      color: #cbd5e1;
+      overflow-x: auto;
+      height: 185px;
+    }
+    .t-green { color: #4ade80; }
+    .t-blue { color: #60a5fa; }
+    .t-cyan { color: #38bdf8; }
+    .t-yellow { color: #fde047; }
+    .t-purple { color: #c084fc; }
+
+    /* 核心特性网格 */
+    .section {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 5rem 1.5rem;
+    }
+    .section-title {
+      text-align: center;
+      margin-bottom: 3.5rem;
+    }
+    .section-title h2 {
+      font-size: clamp(2rem, 3.5vw, 2.75rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+    }
+    .section-title p {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem 1.5rem;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .feature-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-focus);
+      transform: translateY(-3px);
+    }
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .feature-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+      color: #ffffff;
+    }
+    .feature-card p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* 架构图与流程 */
+    .arch-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2.5rem;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .flow-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-top: 2rem;
+    }
+    .flow-step {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 1.25rem;
+      position: relative;
+    }
+    .step-num {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .flow-step h4 {
+      font-size: 1rem;
+      margin-bottom: 0.4rem;
+    }
+    .flow-step p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* API 文档卡片 */
+    .api-container {
+      background: #0b111e;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-top: 2rem;
+    }
+    .api-header {
+      padding: 1rem 1.5rem;
+      background: rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .method-badge {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+    }
+    .method-badge.post { background: #0284c7; color: #fff; }
+    .method-badge.get { background: #16a34a; color: #fff; }
+    .endpoint-path {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      color: #f8fafc;
+    }
+    .code-block {
+      padding: 1.25rem 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+
+    /* 常见问题 (FAQ) */
+    .faq-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 1.5rem;
+    }
+    .faq-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem;
+    }
+    .faq-card h4 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 0.6rem;
+      color: #f1f5f9;
+    }
+    .faq-card p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* 页脚 */
+    footer {
+      border-top: 1px solid var(--border);
+      background: rgba(9, 13, 22, 0.95);
+      padding: 3rem 1.5rem;
+      text-align: center;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .footer-links a:hover {
+      color: var(--text);
+    }
+
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .hero { padding: 3.5rem 1rem 2rem; }
+      .arch-container { padding: 1.5rem; }
+      .mockup-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部导航 -->
+  <header>
+    <div class="nav-container">
+      <a href="#" class="brand">
+        <img src="icon.png" alt="钱迹 AI 记账网关图标" />
+        <span>钱迹 AI 记账网关</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features">核心功能</a>
+        <a href="#architecture">系统架构</a>
+        <a href="#api">局域网 API</a>
+        <a href="#faq">常见问题</a>
+        <a href="https://github.com/cuicui-V5/qianji-lite-bridge" target="_blank">GitHub</a>
+      </nav>
+      <div class="nav-actions">
+        <a href="https://github.com/cuicui-V5/qianji-lite-bridge/releases/latest" class="btn btn-primary" target="_blank">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          下载 APK
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero 英雄区 -->
+  <section class="hero">
+    <div class="version-badge">
+      <span></span> v1.4.3 正式发布 · 现已开源
+    </div>
+    <h1>
+      极速 AI 语音记账<br />
+      <span class="gradient-text">一句话完成多笔复杂账单</span>
+    </h1>
+    <p>
+      专为钱迹 Android 版设计的个人智能网关。融合百度极速语音转写与 DeepSeek-flash 深度思考大模型，配合 100% 静态 Prompt 上下文缓存，打造毫秒级响应、严谨防刷限流的极致记账体验。
+    </p>
+    <div class="hero-cta">
+      <a href="https://github.com/cuicui-V5/qianji-lite-bridge/releases/latest/download/app-debug.apk" class="btn btn-primary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        直接下载 APK (v1.4.3)
+      </a>
+      <a href="https://github.com/cuicui-V5/qianji-lite-bridge" target="_blank" class="btn btn-secondary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+        GitHub 源码仓库
+      </a>
+    </div>
+
+    <!-- UI 模拟看板 -->
+    <div class="mockup-grid">
+      <!-- 记账历史实时展示 -->
+      <div class="mockup-card">
+        <div class="mockup-header">
+          <div class="dot-badge"><span>●</span> 已识别账单历史 (主界面看板)</div>
+          <span>3 笔成功保存</span>
+        </div>
+        <div class="bill-item">
+          <div class="bill-meta">
+            <span class="badge">零食</span>
+            <div class="bill-info">
+              <div class="title">买冰可乐</div>
+              <div class="time">2026-10-16 21:22:04 · 日常账本</div>
+            </div>
+          </div>
+          <div class="bill-money">-¥3.00</div>
+        </div>
+        <div class="bill-item">
+          <div class="bill-meta">
+            <span class="badge">餐饮</span>
+            <div class="bill-info">
+              <div class="title">麦当劳双人餐</div>
+              <div class="time">2026-10-16 18:30:12 · 日常账本</div>
+            </div>
+          </div>
+          <div class="bill-money">-¥42.50</div>
+        </div>
+        <div class="bill-item">
+          <div class="bill-meta">
+            <span class="badge">兼职</span>
+            <div class="bill-info">
+              <div class="title">设计私活到账</div>
+              <div class="time">2026-10-16 16:05:00 · 招商银行</div>
+            </div>
+          </div>
+          <div class="bill-money income">+¥800.00</div>
+        </div>
+      </div>
+
+      <!-- 硬件级 120 FPS 日志看板 -->
+      <div class="mockup-card">
+        <div class="mockup-header">
+          <div class="dot-badge" style="color: #60a5fa;"><span>●</span> 实时网关日志 (120 FPS 满帧渲染)</div>
+          <span>端口: 8848</span>
+        </div>
+        <div class="terminal-box">
+          <div><span class="t-cyan">[21:22:03]</span> 🤖 录音完成 (2100ms)，调用百度极速版转写...</div>
+          <div><span class="t-blue">[21:22:03]</span> ⏱️ <span class="t-green">百度 ASR 耗时: 620ms</span></div>
+          <div><span class="t-yellow">[21:22:03]</span> 📝 转写文本: "买了一瓶可乐花了三块钱"</div>
+          <div><span class="t-purple">[21:22:04]</span> 🛫 <span class="t-cyan">自定义 AI</span>: deepseek-flash | <span class="t-green">命中 100% 前缀缓存</span></div>
+          <div><span class="t-purple">[21:22:05]</span> ⏱️ <span class="t-green">DeepSeek 耗时: 1100ms</span> | 思考决策: 极速直出</div>
+          <div><span class="t-green">[21:22:05]</span> ✨ 结构化账单已生成: 支出 ¥3.00 [零食] - 可乐</div>
+          <div><span class="t-blue">[21:22:05]</span> 🔗 唤起钱迹保存成功，安全限流队列恢复就绪</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 核心亮点 -->
+  <section class="section" id="features">
+    <div class="section-title">
+      <h2>强大特性，生而极致</h2>
+      <p>融合现代大语言模型能力与 Android 系统原生深度优化，重塑移动端记账效率。</p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>极速双引擎协同</h3>
+        <p>提供【百度语音极速版 (80001) + DeepSeek-flash】双阶段流水线与【Gemini 原生多模态直传】两种模式。端到端仅需 1.7 秒即可完成整套记账。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🧠</div>
+        <h3>深度思考自适应</h3>
+        <p>智能识别输入语义复杂度。短文本（默认 ≤20 字）自动关闭思考以毫秒直出；多笔复合长句自动启动轻度推理，兼顾极致响应与严谨拆解。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🚀</div>
+        <h3>Prompt 上下文缓存优化</h3>
+        <p>将动态系统时间后置到用户输入前，使整个庞大的 System Prompt 达到 100% 静态前缀。全面吃满 DeepSeek / Gemini Prefix Caching，成本与延迟骤降。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">📱</div>
+        <h3>桌面长按快捷记账</h3>
+        <p>深度支持 Android App Shortcuts。长按桌面图标点击“快速语音记账”，秒级拉起前台直接进入录制状态，点按轻触即停，行云流水。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🎈</div>
+        <h3>全局悬浮记账胶囊</h3>
+        <p>无需离开当前应用或游戏。屏幕边缘常驻极简悬浮小胶囊，微信支付、刷小红书时随时呼出轻触说话，自动切入记账流程。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🌐</div>
+        <h3>局域网 RESTful 网关</h3>
+        <p>内置 NanoHTTPD 8848 端口，将手机打造成全屋记账中心。支持 iOS 快捷指令、自动化 Python 脚本、Home Assistant 随时投递账单。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🛡️</div>
+        <h3>3.2s 智能限流防刷</h3>
+        <p>严格遵守钱迹官方 3 秒安全防刷规范。所有高并发请求统一汇入协程 Channel 异步队列，3,200ms 匀速平稳入库，绝不丢账漏账。</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">📳</div>
+        <h3>触觉震动反馈</h3>
+        <p>按下录音触发沉稳 Heavy Click 触感告知录音就绪，松手或点击结束触发干脆 Click 反馈，盲操也能清晰感知每个状态。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 架构与执行流程 -->
+  <section class="section" id="architecture">
+    <div class="section-title">
+      <h2>优雅的技术架构设计</h2>
+      <p>模块化分层解耦，高内聚低耦合，保证极端网络与并发场景下的绝对可靠性。</p>
+    </div>
+
+    <div class="arch-container">
+      <div style="font-weight: 700; font-size: 1.15rem; margin-bottom: 0.5rem;">两阶段流水线与限流调度流程</div>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">无论来自麦克风录音、悬浮胶囊还是局域网 HTTP 请求，均统一经历以下标准化通道：</p>
+
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="step-num">Step 01</div>
+          <h4>音频录制 / HTTP 接入</h4>
+          <p>M4A 高清录音或接收局域网 RESTful POST 载荷。</p>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">Step 02</div>
+          <h4>极速转录 (ASR)</h4>
+          <p>百度极速版 (80001) 引擎，平均 600ms 完成高精度中文转写。</p>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">Step 03</div>
+          <h4>AI 结构化解析</h4>
+          <p>DeepSeek-flash 自适应思考直出 JSON 账单，多笔复杂消费自动拆解。</p>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">Step 04</div>
+          <h4>强校验与 3.2s 队列</h4>
+          <p>过滤幻觉分类，合规账单压入 Channel，间隔 3.2s 唤起钱迹并切回网关。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 局域网 API 文档 -->
+  <section class="section" id="api">
+    <div class="section-title">
+      <h2>开放的局域网 RESTful API</h2>
+      <p>将钱迹能力赋能至全屋智能与跨平台设备（iOS 快捷指令、浏览器插件、自动化脚本）。</p>
+    </div>
+
+    <div class="api-container">
+      <div class="api-header">
+        <span class="method-badge post">POST</span>
+        <span class="endpoint-path">http://{手机IP}:8848/api/v1/bill/ai</span>
+      </div>
+      <div class="code-block">
+<span class="t-cyan">// 传入自然语言文本，由网关代调大模型提取并自动入库</span>
+curl -X POST http://192.168.1.100:8848/api/v1/bill/ai \
+  -H "Content-Type: application/json" \
+  -d '{"text": "在公司楼下便利店买了一包烟25元微信付的，中午吃黄焖鸡米饭20元"}'
+
+<span class="t-green">// 响应报文 (毫秒级异步入队)</span>
+{
+  "code": 200,
+  "message": "Queued",
+  "count": 2,
+  "queue_size": 2
+}
+      </div>
+    </div>
+
+    <div class="api-container">
+      <div class="api-header">
+        <span class="method-badge post">POST</span>
+        <span class="endpoint-path">http://{手机IP}:8848/api/v1/bill/raw</span>
+      </div>
+      <div class="code-block">
+<span class="t-cyan">// 结构化直通接口（支持批量数组或单对象）</span>
+curl -X POST http://192.168.1.100:8848/api/v1/bill/raw \
+  -H "Content-Type: application/json" \
+  -d '[{
+    "type": 0,
+    "money": 35.5,
+    "time": "2026-10-16 12:30:00",
+    "remark": "星巴克美式咖啡",
+    "catename": "餐饮",
+    "accountname": "招商银行",
+    "bookname": "日常账本"
+  }]'
+      </div>
+    </div>
+
+    <div class="api-container">
+      <div class="api-header">
+        <span class="method-badge get">GET</span>
+        <span class="endpoint-path">http://{手机IP}:8848/api/v1/status</span>
+      </div>
+      <div class="code-block">
+<span class="t-cyan">// 查询网关运行状态与当前排队积压量</span>
+{
+  "code": 200,
+  "status": "running",
+  "port": 8848,
+  "queue_size": 0,
+  "version": "1.4.3"
+}
+      </div>
+    </div>
+  </section>
+
+  <!-- 常见问题 -->
+  <section class="section" id="faq">
+    <div class="section-title">
+      <h2>常见问题与解答</h2>
+      <p>解答关于保活、API Key 安全以及钱迹客户端联动的常见疑惑。</p>
+    </div>
+
+    <div class="faq-grid">
+      <div class="faq-card">
+        <h4>Q: 百度语音识别与 DeepSeek 密钥如何获取？</h4>
+        <p>百度语音识别可在百度智能云控制台免费开通“语音技术”服务（极速版每月免费额度充足），填入 AppID、API Key 与 Secret Key 即可；DeepSeek 可在官方开放平台申请 API Key，或使用任何兼容 OpenAI 协议的第三方中转服务。</p>
+      </div>
+
+      <div class="faq-card">
+        <h4>Q: 为什么要设置 3.2 秒安全限流？</h4>
+        <p>钱迹官方接口设有 3 秒防刷机制。如果一句话被 AI 拆分为多笔账单，或者局域网并发调用，瞬间连续唤起会被钱迹拦截。本网关内置 FIFO 协程通道以 3,200ms 安全匀速唤起，保证 100% 成功入库。</p>
+      </div>
+
+      <div class="faq-card">
+        <h4>Q: 是否需要 Root 或复杂的无障碍权限？</h4>
+        <p>完全不需要！本工具完全通过 Android 原生 URL Scheme (`qianji://publicapi/addbill`) 进行正规集成。仅需要常规的网络、麦克风权限以及悬浮窗权限（如需全局胶囊）。</p>
+      </div>
+
+      <div class="faq-card">
+        <h4>Q: 如何保证在锁屏或后台下持续作为网关运行？</h4>
+        <p>前台运行时应用会自动启用常亮开关；如需作为常驻家庭网关，请在手机系统设置中将本应用电池策略设置为“无限制 / 允许后台高耗电”，防止被系统后台查杀。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 页脚 -->
+  <footer>
+    <div class="footer-links">
+      <a href="https://github.com/cuicui-V5/qianji-lite-bridge" target="_blank">GitHub 仓库</a>
+      <a href="https://github.com/cuicui-V5/qianji-lite-bridge/releases" target="_blank">版本发布 (Releases)</a>
+      <a href="https://github.com/cuicui-V5/qianji-lite-bridge/issues" target="_blank">反馈与 Issue</a>
+    </div>
+    <div>
+      <p>© 2026 Qianji AI Bridge (钱迹极速 AI 记账网关). Released under the MIT License.</p>
+      <p style="margin-top: 0.35rem; font-size: 0.8rem; color: #64748b;">Powered by cuicui-V5 · 专为高效记账打造</p>
+    </div>
+  </footer>
+
+</body>
+</html>
