@@ -3,6 +3,7 @@ package com.qianji.litebridge.service
 import com.qianji.litebridge.model.BillItem
 import com.qianji.litebridge.util.PreferencesManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -44,13 +45,29 @@ class CustomAiService(
         val currentDateTime = BillPromptHelper.getCurrentDateTimeString()
         val systemPrompt = BillPromptHelper.buildPrompt(prefs, currentDateTime)
 
+        // 思考模式智能决策 (关 / 低 / 高 / 自动)
+        val textLength = textPrompt.length
+        val thinkingMode = prefs.customAiThinkingMode
+        val (effectiveThinkingType, effectiveEffort, thinkingDesc) = when (thinkingMode) {
+            "disabled" -> Triple("disabled", null, "关闭思考 (极速直出)")
+            "low" -> Triple("enabled", "low", "轻度思考 (Low)")
+            "high" -> Triple("enabled", "high", "深度思考 (High)")
+            else -> { // "auto" 自动模式
+                val threshold = prefs.customAiAutoThreshold
+                val autoEffort = prefs.customAiAutoEffort
+                if (textLength > threshold) {
+                    Triple("enabled", autoEffort, "自动决策: 字数($textLength) > 阈值($threshold)，开启 $autoEffort 推理")
+                } else {
+                    Triple("disabled", null, "自动决策: 字数($textLength) <= 阈值($threshold)，关闭思考(极速直出)")
+                }
+            }
+        }
+
         val requestTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-        onProgress("🛫 [自定义 AI 请求] 时间戳: $requestTime | 模型: $modelName | 接口: $targetUrl")
-        onProgress("📦 [载荷数据] 文本输入: \"$textPrompt\"")
+        onProgress("🛫 [自定义 AI 请求] 时间戳: $requestTime | 模型: $modelName | 思考: $thinkingDesc")
+        onProgress("📦 [载荷数据] 文本输入 ($textLength 字): \"$textPrompt\"")
 
-        val startTime = System.currentTimeMillis()
-
-        // 构造 OpenAI 兼容请求体 (尝试开启 json_object 响应约束加速解析)
+        // 构造 OpenAI 兼容请求体 (开启 json_object 响应约束与思考模式配置)
         val payloadObj = JSONObject().apply {
             put("model", modelName)
             put("messages", JSONArray().apply {
@@ -64,51 +81,133 @@ class CustomAiService(
                 })
             })
             put("temperature", 0.1)
+            put("max_tokens", 2048)
             put("response_format", JSONObject().apply {
                 put("type", "json_object")
             })
+
+            // 根据 DeepSeek 规范注入思考模式控制参数
+            if (effectiveThinkingType == "disabled") {
+                put("thinking", JSONObject().apply {
+                    put("type", "disabled")
+                })
+            } else if (effectiveThinkingType == "enabled") {
+                put("thinking", JSONObject().apply {
+                    put("type", "enabled")
+                })
+                if (effectiveEffort != null) {
+                    put("reasoning_effort", effectiveEffort)
+                }
+            }
         }
 
-        var (responseCode, responseBody) = try {
-            sendChatRequest(targetUrl, apiKey, payloadObj.toString())
-        } catch (e: Exception) {
+        // 自动重试机制 (最多 2 次尝试：初次 + 1次自动重试)
+        var lastException: Exception? = null
+        for (attempt in 1..2) {
+            val startTime = System.currentTimeMillis()
+            if (attempt > 1) {
+                onProgress("🔄 正在自动重试第 ${attempt - 1} 次请求...")
+                delay(800)
+            }
+
+            var (responseCode, responseBody) = try {
+                sendChatRequest(targetUrl, apiKey, payloadObj.toString())
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt == 1) {
+                    onProgress("⚠️ 连接自定义 AI 异常 (${e.message})，正在自动重试...")
+                    continue
+                } else {
+                    throw IllegalStateException("连接自定义 AI 服务器失败: ${e.message}", e)
+                }
+            }
+
+            // 兼容性保护 1：如果服务商报错不支持 thinking 参数，剔除后重试
+            if (responseCode == 400 && responseBody.contains("thinking", ignoreCase = true)) {
+                onProgress("⚠️ 服务商不支持 thinking 参数，自动回退普通模式重试...")
+                payloadObj.remove("thinking")
+                payloadObj.remove("reasoning_effort")
+                val fallbackResult = sendChatRequest(targetUrl, apiKey, payloadObj.toString())
+                responseCode = fallbackResult.first
+                responseBody = fallbackResult.second
+            }
+
+            // 兼容性保护 2：如果服务商报错不支持 response_format，自动剔除后重试
+            if (responseCode == 400 && responseBody.contains("response_format", ignoreCase = true)) {
+                onProgress("⚠️ 服务商不支持 response_format，自动回退普通模式重试...")
+                payloadObj.remove("response_format")
+                val fallbackResult = sendChatRequest(targetUrl, apiKey, payloadObj.toString())
+                responseCode = fallbackResult.first
+                responseBody = fallbackResult.second
+            }
+
             val elapsed = System.currentTimeMillis() - startTime
-            throw IllegalStateException("连接自定义 AI 服务器失败 (${elapsed}ms): ${e.message}", e)
+            if (responseCode !in 200..299) {
+                lastException = IllegalStateException("HTTP $responseCode: $responseBody")
+                if (attempt == 1) {
+                    onProgress("⚠️ 自定义 AI 响应失败 (HTTP $responseCode, 耗时 ${elapsed}ms)，正在自动重试...")
+                    continue
+                } else {
+                    throw IllegalStateException("自定义 AI 请求失败 (HTTP $responseCode, 耗时 ${elapsed}ms): $responseBody")
+                }
+            }
+
+            onProgress("⏱️ [自定义 AI 耗时] ${elapsed}ms")
+
+            val rootObj = try {
+                JSONObject(responseBody)
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt == 1) {
+                    onProgress("⚠️ 自定义 AI 响应非 JSON 结构，正在自动重试...")
+                    continue
+                } else {
+                    throw IllegalStateException("自定义 AI 响应数据格式非法: $responseBody")
+                }
+            }
+
+            val choices = rootObj.optJSONArray("choices")
+            if (choices == null || choices.length() == 0) {
+                lastException = IllegalStateException("未返回有效 choices 响应")
+                if (attempt == 1) {
+                    onProgress("⚠️ 未返回有效 choices，正在自动重试...")
+                    continue
+                } else {
+                    throw IllegalStateException("自定义 AI 未返回有效 choices 响应: $responseBody")
+                }
+            }
+
+            val firstChoice = choices.getJSONObject(0)
+            val message = firstChoice.optJSONObject("message")
+            val content = message?.optString("content") ?: ""
+
+            // 容错保护：针对 DeepSeek 文档指出的 JSON 模式偶发返回空 content 进行重试
+            if (content.isBlank()) {
+                lastException = IllegalStateException("自定义 AI 返回的内容为空")
+                if (attempt == 1) {
+                    onProgress("⚠️ 模型返回内容为空 (命中 DeepSeek 偶发空 content 现象)，正在自动重试...")
+                    continue
+                } else {
+                    throw IllegalStateException("自定义 AI 返回的内容为空")
+                }
+            }
+
+            onProgress("📥 [自定义 AI 原始响应]:\n$content")
+
+            try {
+                return@withContext BillPromptHelper.parseJsonToBills(content, currentDateTime, prefs, onProgress)
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt == 1) {
+                    onProgress("⚠️ 账单解析异常 (${e.message})，正在自动重试...")
+                    continue
+                } else {
+                    throw e
+                }
+            }
         }
 
-        // 如果服务端提示不支持 response_format，自动回退普通请求重试
-        if (responseCode == 400 && responseBody.contains("response_format", ignoreCase = true)) {
-            onProgress("⚠️ 服务商不支持 response_format，自动回退普通模式重试...")
-            payloadObj.remove("response_format")
-            val fallbackResult = sendChatRequest(targetUrl, apiKey, payloadObj.toString())
-            responseCode = fallbackResult.first
-            responseBody = fallbackResult.second
-        }
-
-        val elapsed = System.currentTimeMillis() - startTime
-        if (responseCode !in 200..299) {
-            throw IllegalStateException("自定义 AI 请求失败 (HTTP $responseCode, 耗时 ${elapsed}ms): $responseBody")
-        }
-
-        onProgress("⏱️ [自定义 AI 耗时] ${elapsed}ms")
-
-        val rootObj = JSONObject(responseBody)
-        val choices = rootObj.optJSONArray("choices")
-        if (choices == null || choices.length() == 0) {
-            throw IllegalStateException("自定义 AI 未返回有效 choices 响应: $responseBody")
-        }
-
-        val firstChoice = choices.getJSONObject(0)
-        val message = firstChoice.optJSONObject("message")
-        val content = message?.optString("content") ?: ""
-
-        if (content.isBlank()) {
-            throw IllegalStateException("自定义 AI 返回的内容为空")
-        }
-
-        onProgress("📥 [自定义 AI 原始响应]:\n$content")
-
-        BillPromptHelper.parseJsonToBills(content, currentDateTime, prefs, onProgress)
+        throw lastException ?: IllegalStateException("自定义 AI 处理失败")
     }
 
     private fun sendChatRequest(targetUrl: String, apiKey: String, jsonPayload: String): Pair<Int, String> {

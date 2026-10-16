@@ -79,6 +79,9 @@ fun SettingsCard(
     var customAiBaseUrl by remember { mutableStateOf(prefs.customAiBaseUrl) }
     var customAiApiKey by remember { mutableStateOf(prefs.customAiApiKey) }
     var customAiModel by remember { mutableStateOf(prefs.customAiModel) }
+    var customAiThinkingMode by remember { mutableStateOf(prefs.customAiThinkingMode) }
+    var customAiAutoThresholdText by remember { mutableStateOf(prefs.customAiAutoThreshold.toString()) }
+    var customAiAutoEffort by remember { mutableStateOf(prefs.customAiAutoEffort) }
 
     // 2. 语音识别 (ASR)
     var asrModeEnabled by remember { mutableStateOf(prefs.asrModeEnabled) }
@@ -110,6 +113,9 @@ fun SettingsCard(
         prefs.customAiBaseUrl = customAiBaseUrl
         prefs.customAiApiKey = customAiApiKey
         prefs.customAiModel = customAiModel
+        prefs.customAiThinkingMode = customAiThinkingMode
+        prefs.customAiAutoThreshold = customAiAutoThresholdText.toIntOrNull() ?: 20
+        prefs.customAiAutoEffort = customAiAutoEffort
 
         prefs.asrModeEnabled = asrModeEnabled
         prefs.asrProvider = asrProvider
@@ -299,7 +305,7 @@ fun SettingsCard(
                                     selected = customAiBaseUrl == "https://api.deepseek.com",
                                     onClick = {
                                         customAiBaseUrl = "https://api.deepseek.com"
-                                        customAiModel = "deepseek-chat"
+                                        customAiModel = "deepseek-flash"
                                         saveAll(showToast = false)
                                     },
                                     label = { Text("DeepSeek 官方", fontSize = 11.sp) }
@@ -370,10 +376,124 @@ fun SettingsCard(
                                     saveAll(showToast = false)
                                 },
                                 label = { Text("模型名称 (Model Name)") },
-                                placeholder = { Text("deepseek-chat") },
+                                placeholder = { Text("deepseek-flash") },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true
                             )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text(
+                                text = "思考模式 (DeepSeek 思维链推理)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                FilterChip(
+                                    selected = customAiThinkingMode == "disabled",
+                                    onClick = {
+                                        customAiThinkingMode = "disabled"
+                                        saveAll(showToast = false)
+                                    },
+                                    label = { Text("关 (极速)", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = customAiThinkingMode == "low",
+                                    onClick = {
+                                        customAiThinkingMode = "low"
+                                        saveAll(showToast = false)
+                                    },
+                                    label = { Text("低 (Low)", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = customAiThinkingMode == "high",
+                                    onClick = {
+                                        customAiThinkingMode = "high"
+                                        saveAll(showToast = false)
+                                    },
+                                    label = { Text("高 (High)", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = customAiThinkingMode == "auto",
+                                    onClick = {
+                                        customAiThinkingMode = "auto"
+                                        saveAll(showToast = false)
+                                    },
+                                    label = { Text("自动 (默认)", fontSize = 11.sp) }
+                                )
+                            }
+
+                            if (customAiThinkingMode == "auto") {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .padding(10.dp)
+                                ) {
+                                    Text(
+                                        text = "🪄 自动推理策略：短文本极速直出，长文本开启推理",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryBlue
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedTextField(
+                                            value = customAiAutoThresholdText,
+                                            onValueChange = {
+                                                customAiAutoThresholdText = it.filter { c -> c.isDigit() }
+                                                saveAll(showToast = false)
+                                            },
+                                            label = { Text("字数阈值 (字)") },
+                                            placeholder = { Text("20") },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                        )
+
+                                        Column(modifier = Modifier.weight(1.2f)) {
+                                            Text(
+                                                text = "超阈值强度:",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                FilterChip(
+                                                    selected = customAiAutoEffort == "low",
+                                                    onClick = {
+                                                        customAiAutoEffort = "low"
+                                                        saveAll(showToast = false)
+                                                    },
+                                                    label = { Text("Low", fontSize = 10.sp) }
+                                                )
+                                                FilterChip(
+                                                    selected = customAiAutoEffort == "high",
+                                                    onClick = {
+                                                        customAiAutoEffort = "high"
+                                                        saveAll(showToast = false)
+                                                    },
+                                                    label = { Text("High", fontSize = 10.sp) }
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "规则：<= ${customAiAutoThresholdText.ifBlank { "20" }} 字不开启推理 (极速直出)；> ${customAiAutoThresholdText.ifBlank { "20" }} 字自动启用 ${customAiAutoEffort.uppercase()} 推理 (增强多账单理解)。",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
 

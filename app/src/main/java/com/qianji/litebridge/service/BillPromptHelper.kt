@@ -131,12 +131,68 @@ $bookRule
             throw IllegalStateException("未检测到有效消费金额（钱迹要求金额必须大于0），请在语音中说明花费金额，例如：'吃午餐花了25元'")
         }
 
+        val userCategories = prefs.categories.split("\n", ",").map { it.trim() }.filter { it.isNotEmpty() }
+        val userAccounts = prefs.accounts.split("\n", ",").map { it.trim() }.filter { it.isNotEmpty() }
+        val defaultBookName = prefs.defaultBook.ifBlank { PreferencesManager.DEFAULT_BOOK }
+
         val mappedList = validList.map { item ->
+            // 1. 分类有效性校验与纠偏映射
+            val rawCate = item.catename?.trim()
+            val validatedCate = if (userCategories.isEmpty()) {
+                rawCate?.takeIf { it.isNotBlank() } ?: "其它"
+            } else if (rawCate.isNullOrBlank()) {
+                if (userCategories.contains("其它")) "其它" else userCategories.first()
+            } else {
+                val exact = userCategories.firstOrNull { it.equals(rawCate, ignoreCase = true) }
+                if (exact != null) {
+                    exact
+                } else {
+                    val partial = userCategories.firstOrNull {
+                        rawCate.contains(it, ignoreCase = true) || it.contains(rawCate, ignoreCase = true)
+                    }
+                    if (partial != null) {
+                        onProgress("ℹ️ 分类「$rawCate」自动模糊匹配为设置中的「$partial」")
+                        partial
+                    } else {
+                        val fallback = if (userCategories.contains("其它")) "其它" else userCategories.first()
+                        onProgress("⚠️ 分类「$rawCate」未在设置列表中，已自动纠错为「$fallback」")
+                        fallback
+                    }
+                }
+            }
+
+            // 2. 资产账户有效性校验
+            val validatedAccount = if (userAccounts.isEmpty()) {
+                item.accountname?.takeIf { it.isNotBlank() }
+            } else if (item.accountname.isNullOrBlank()) {
+                null
+            } else {
+                val rawAcc = item.accountname.trim()
+                val exact = userAccounts.firstOrNull { it.equals(rawAcc, ignoreCase = true) }
+                if (exact != null) {
+                    exact
+                } else {
+                    val partial = userAccounts.firstOrNull {
+                        rawAcc.contains(it, ignoreCase = true) || it.contains(rawAcc, ignoreCase = true)
+                    }
+                    if (partial != null) {
+                        partial
+                    } else {
+                        onProgress("⚠️ 资产账户「$rawAcc」不在设置列表中，已重置为空")
+                        null
+                    }
+                }
+            }
+
+            // 3. 账单类型安全约束 (0=支出, 1=收入, 2=转账, 3=还款, 5=报销)
+            val validatedType = if (item.type in listOf(0, 1, 2, 3, 5)) item.type else 0
+
             item.copy(
+                type = validatedType,
                 time = if (item.time.isNullOrBlank()) defaultTime else item.time,
-                bookname = if (item.bookname.isNullOrBlank()) prefs.defaultBook.ifBlank { PreferencesManager.DEFAULT_BOOK } else item.bookname,
-                catename = if (item.catename.isNullOrBlank()) "其它" else item.catename,
-                accountname = if (prefs.accounts.isBlank()) item.accountname?.takeIf { it.isNotBlank() } else (item.accountname ?: prefs.accounts.split(",", "\n").firstOrNull())
+                bookname = if (item.bookname.isNullOrBlank()) defaultBookName else item.bookname,
+                catename = validatedCate,
+                accountname = validatedAccount
             )
         }
 

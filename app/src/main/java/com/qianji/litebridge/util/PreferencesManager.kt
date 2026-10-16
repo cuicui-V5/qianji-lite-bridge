@@ -80,6 +80,21 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString(KEY_CUSTOM_AI_MODEL, DEFAULT_CUSTOM_AI_MODEL) ?: DEFAULT_CUSTOM_AI_MODEL
         set(value) = prefs.edit().putString(KEY_CUSTOM_AI_MODEL, value.trim()).apply()
 
+    // 自定义 AI (DeepSeek) 思考强度模式：disabled (关) / low (低) / high (高) / auto (自动，默认)
+    var customAiThinkingMode: String
+        get() = prefs.getString(KEY_CUSTOM_AI_THINKING_MODE, "auto") ?: "auto"
+        set(value) = prefs.edit().putString(KEY_CUSTOM_AI_THINKING_MODE, value.trim()).apply()
+
+    // 自动模式下的字数阈值 (默认 20 字)
+    var customAiAutoThreshold: Int
+        get() = prefs.getInt(KEY_CUSTOM_AI_AUTO_THRESHOLD, 20)
+        set(value) = prefs.edit().putInt(KEY_CUSTOM_AI_AUTO_THRESHOLD, value).apply()
+
+    // 自动模式下超过阈值的思考强度：low (默认) / high
+    var customAiAutoEffort: String
+        get() = prefs.getString(KEY_CUSTOM_AI_AUTO_EFFORT, "low") ?: "low"
+        set(value) = prefs.edit().putString(KEY_CUSTOM_AI_AUTO_EFFORT, value.trim()).apply()
+
     // 语音识别服务提供商：gemini / baidu
     var asrProvider: String
         get() = prefs.getString(KEY_ASR_PROVIDER, "gemini") ?: "gemini"
@@ -109,6 +124,11 @@ class PreferencesManager(context: Context) {
         if (savedCategories == "三餐/::/早餐,三餐/::/午餐,三餐/::/晚餐,交通,日用,零食,其它") {
             categories = DEFAULT_CATEGORIES
         }
+        // 若之前自定义模型是旧的默认值 deepseek-chat，自动切换为最新指定的 deepseek-flash
+        val savedCustomModel = prefs.getString(KEY_CUSTOM_AI_MODEL, null)
+        if (savedCustomModel == "deepseek-chat") {
+            customAiModel = DEFAULT_CUSTOM_AI_MODEL
+        }
     }
 
     companion object {
@@ -129,13 +149,16 @@ class PreferencesManager(context: Context) {
         private const val KEY_CUSTOM_AI_BASE_URL = "custom_ai_base_url"
         private const val KEY_CUSTOM_AI_API_KEY = "custom_ai_api_key"
         private const val KEY_CUSTOM_AI_MODEL = "custom_ai_model"
+        private const val KEY_CUSTOM_AI_THINKING_MODE = "custom_ai_thinking_mode"
+        private const val KEY_CUSTOM_AI_AUTO_THRESHOLD = "custom_ai_auto_threshold"
+        private const val KEY_CUSTOM_AI_AUTO_EFFORT = "custom_ai_auto_effort"
         private const val KEY_ASR_PROVIDER = "asr_provider"
         private const val KEY_BAIDU_API_KEY = "baidu_api_key"
         private const val KEY_BAIDU_SECRET_KEY = "baidu_secret_key"
         private const val KEY_BAIDU_DEV_PID = "baidu_dev_pid"
 
         const val DEFAULT_CUSTOM_AI_BASE_URL = "https://api.deepseek.com"
-        const val DEFAULT_CUSTOM_AI_MODEL = "deepseek-chat"
+        const val DEFAULT_CUSTOM_AI_MODEL = "deepseek-flash"
 
         const val DEFAULT_CATEGORIES = """三餐
 交通
