@@ -18,7 +18,11 @@ object BillPromptHelper {
         return sdf.format(Date())
     }
 
-    fun buildPrompt(prefs: PreferencesManager, currentDateTime: String): String {
+    /**
+     * 系统指令 System Prompt：保持完全静态！
+     * 不包含动态当前时间，确保 DeepSeek Context Caching 和 Gemini Prefix Caching 达到 100% 命中率
+     */
+    fun buildSystemPrompt(prefs: PreferencesManager): String {
         val categories = prefs.categories.ifBlank { PreferencesManager.DEFAULT_CATEGORIES }
         val accounts = prefs.accounts.trim()
         val defaultBook = prefs.defaultBook.ifBlank { PreferencesManager.DEFAULT_BOOK }
@@ -37,8 +41,6 @@ object BillPromptHelper {
 
         return """
 你是一个精准、严谨的专业个人记账助理。
-当前手机系统准确时间是: $currentDateTime (格式 yyyy-MM-dd HH:mm:ss)。
-
 用户通过语音或文本向你描述财务收支情况。
 请识别其中的全部收支账目（支持单次多笔账单拆分），并严格以 JSON 数组格式输出，不要输出任何 Markdown 解释文字或多余问候。
 
@@ -54,7 +56,7 @@ $bookRule
 - "type": 整数。0=支出，1=收入，2=转账，3=信用卡还款，5=报销。默认 0。
 - "money": 浮点数，账单金额，必须 > 0，精确到小数点后2位（例如 25.50）。
   * 核心注意：如果用户未明确说出具体的消费金额（例如仅说'中午吃了饭'或'打车回家'），禁止猜测金额为0！未说明金额的收支请直接丢弃，若整段话均无具体金额，请直接返回空数组 []！
-- "time": 字符串，格式 yyyy-MM-dd HH:mm:ss。若提到了"刚才/今天中午/昨天晚上/前天"等相对时间，请结合当前系统时间推算绝对时间；若未提及则直接使用当前时间。
+- "time": 字符串，格式 yyyy-MM-dd HH:mm:ss。若输入中提到了"刚才/今天中午/昨天晚上/前天"等相对时间，请结合随用户输入一并给出的当前手机系统时间推算绝对时间；若未提及则直接使用该系统时间。
 - "remark": 简要备注说明。
 - "catename": 分类名称（转账或还款时为 null）。
 - "accountname": 资产名称（无指定或普通支出时设为 null，转账时为转出账户）。
@@ -68,7 +70,7 @@ $bookRule
   {
     "type": 0,
     "money": 28.50,
-    "time": "$currentDateTime",
+    "time": "2026-10-16 12:30:00",
     "remark": "星巴克咖啡",
     "catename": "三餐",
     "accountname": null,
@@ -76,6 +78,20 @@ $bookRule
   }
 ]
 """.trimIndent()
+    }
+
+    /**
+     * 构造用户输入载荷：将动态当前时间放置在用户输入内容之前，方便系统 Prompt 上下文缓存
+     */
+    fun buildUserContent(userInput: String, currentDateTime: String): String {
+        return """
+当前手机系统准确时间: $currentDateTime (格式 yyyy-MM-dd HH:mm:ss)
+用户记账输入内容: "$userInput"
+""".trimIndent()
+    }
+
+    fun buildPrompt(prefs: PreferencesManager, currentDateTime: String): String {
+        return buildSystemPrompt(prefs) + "\n\n当前手机系统准确时间: $currentDateTime"
     }
 
     fun parseJsonToBills(

@@ -129,6 +129,7 @@ fun SettingsCard(
         prefs.categories = categories
         prefs.accounts = accounts
         prefs.apiToken = apiToken
+        prefs.notifySettingsChanged()
 
         showAutoSavedHint = true
         if (showToast) {

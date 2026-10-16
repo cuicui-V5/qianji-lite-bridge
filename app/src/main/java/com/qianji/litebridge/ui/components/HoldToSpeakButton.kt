@@ -1,9 +1,13 @@
 package com.qianji.litebridge.ui.components
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -141,6 +145,38 @@ fun HoldToSpeakButton(
 
     val currentRecordState by rememberUpdatedState(recordState)
     val currentIsTapToStop by rememberUpdatedState(isTapToStopMode)
+
+    val vibrator = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vibratorManager?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+    }
+
+    fun vibratePress() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(40)
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun vibrateRelease() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(25)
+            }
+        } catch (_: Exception) {}
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -293,15 +329,18 @@ fun HoldToSpeakButton(
 
                     if (currentIsTapToStop && currentRecordState == RecordState.RECORDING) {
                         // 桌面快捷方式一键直达模式：点击即可结束并开始记账
+                        vibrateRelease()
                         isTapToStopMode = false
                         stopAndProcessRecording()
                         waitForUpOrCancellation()
                     } else {
                         // 主界面常规模式：长按说话，松开结束
                         if (currentRecordState == RecordState.IDLE) {
+                            vibratePress()
                             startRecording()
 
                             val upOrCancel = waitForUpOrCancellation()
+                            vibrateRelease()
                             if (upOrCancel != null) {
                                 stopAndProcessRecording()
                             } else {
@@ -334,6 +373,9 @@ fun HoldToSpeakButton(
                     .padding(20.dp)
                     .scale(if (recordState == RecordState.RECORDING) pulseScale else 1.0f)
             ) {
+                // 响应式订阅配置版本变动
+                val currentVersion = prefs.settingsVersion
+
                 when (recordState) {
                     RecordState.IDLE -> {
                         Box(
@@ -358,15 +400,9 @@ fun HoldToSpeakButton(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        val aiDesc = if (prefs.aiProvider == "custom") prefs.customAiModel.ifBlank { "自定义AI" } else "Gemini"
-                        val asrDesc = if (prefs.asrProvider == "baidu") "百度语音" else "Gemini转写"
                         Text(
-                            text = when {
-                                prefs.aiProvider == "custom" -> "$asrDesc + $aiDesc"
-                                prefs.asrModeEnabled -> "$asrDesc · 两阶段模式"
-                                else -> "原生多模态直传 · 音频解析"
-                            },
-                            color = Color.White.copy(alpha = 0.8f),
+                            text = prefs.getModeSummary(),
+                            color = Color.White.copy(alpha = 0.85f),
                             fontSize = 13.sp
                         )
                     }

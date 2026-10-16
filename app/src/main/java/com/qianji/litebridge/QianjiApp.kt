@@ -40,8 +40,25 @@ class QianjiApp : Application() {
         private set
 
     val logs = mutableStateListOf<String>()
+    val recognizedBills = mutableStateListOf<com.qianji.litebridge.model.BillItem>()
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    fun addRecognizedBill(bill: com.qianji.litebridge.model.BillItem) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            recognizedBills.add(0, bill)
+            if (recognizedBills.size > 50) {
+                recognizedBills.removeAt(recognizedBills.lastIndex)
+            }
+        } else {
+            mainHandler.post {
+                recognizedBills.add(0, bill)
+                if (recognizedBills.size > 50) {
+                    recognizedBills.removeAt(recognizedBills.lastIndex)
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()

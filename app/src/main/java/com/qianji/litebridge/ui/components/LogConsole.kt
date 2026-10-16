@@ -15,10 +15,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -31,13 +30,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.qianji.litebridge.ui.theme.PrimaryBlue
@@ -51,12 +54,34 @@ fun LogConsole(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val listState = rememberLazyListState()
+    val scrollState = rememberScrollState()
 
-    // 自动滚动到最新日志
+    // 自动滚动到最新日志底部
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty()) {
-            listState.animateScrollToItem(logs.size - 1)
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+
+    // 构造单次完整富文本样式，彻底杜绝成百上千个 Text 节点产生的布局测量与掉帧
+    val annotatedLogText = remember(logs.size, logs.lastOrNull()) {
+        buildAnnotatedString {
+            logs.forEachIndexed { index, log ->
+                val color = when {
+                    log.contains("❌") -> Color(0xFFF87171)
+                    log.contains("⚠️") -> Color(0xFFFBBF24)
+                    log.contains("✅") || log.contains("✨") -> Color(0xFF4ADE80)
+                    log.contains("🛫") || log.contains("🔗") -> Color(0xFF60A5FA)
+                    log.contains("📄") || log.contains("📥") -> Color(0xFFA78BFA)
+                    else -> TerminalText
+                }
+                withStyle(SpanStyle(color = color)) {
+                    append(log)
+                }
+                if (index < logs.size - 1) {
+                    append("\n\n")
+                }
+            }
         }
     }
 
@@ -140,14 +165,15 @@ fun LogConsole(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 终端日志框
+            // 终端日志框：单节点直接渲染全量日志，原生流畅滑动
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(280.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(TerminalBackground)
-                    .padding(8.dp)
+                    .verticalScroll(scrollState)
+                    .padding(10.dp)
             ) {
                 if (logs.isEmpty()) {
                     Text(
@@ -156,31 +182,16 @@ fun LogConsole(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         lineHeight = 18.sp,
-                        modifier = Modifier.padding(8.dp)
+                        modifier = Modifier.padding(4.dp)
                     )
                 } else {
-                    LazyColumn(
-                        state = listState,
+                    Text(
+                        text = annotatedLogText,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.5.sp,
                         modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(logs) { log ->
-                            Text(
-                                text = log,
-                                color = when {
-                                    log.contains("❌") -> Color(0xFFF87171)
-                                    log.contains("⚠️") -> Color(0xFFFBBF24)
-                                    log.contains("✅") || log.contains("✨") -> Color(0xFF4ADE80)
-                                    log.contains("🛫") || log.contains("🔗") -> Color(0xFF60A5FA)
-                                    log.contains("📄") || log.contains("📥") -> Color(0xFFA78BFA)
-                                    else -> TerminalText
-                                },
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.5.sp,
-                                lineHeight = 16.5.sp,
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
-                        }
-                    }
+                    )
                 }
             }
         }

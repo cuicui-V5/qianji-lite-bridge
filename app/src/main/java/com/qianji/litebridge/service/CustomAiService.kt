@@ -43,7 +43,8 @@ class CustomAiService(
         }
 
         val currentDateTime = BillPromptHelper.getCurrentDateTimeString()
-        val systemPrompt = BillPromptHelper.buildPrompt(prefs, currentDateTime)
+        val systemPrompt = BillPromptHelper.buildSystemPrompt(prefs)
+        val userContent = BillPromptHelper.buildUserContent(textPrompt, currentDateTime)
 
         // 思考模式智能决策 (关 / 低 / 高 / 自动)
         val textLength = textPrompt.length
@@ -68,6 +69,7 @@ class CustomAiService(
         onProgress("📦 [载荷数据] 文本输入 ($textLength 字): \"$textPrompt\"")
 
         // 构造 OpenAI 兼容请求体 (开启 json_object 响应约束与思考模式配置)
+        // systemPrompt 保持完全静态，极大提升服务端 Context Caching 命中率
         val payloadObj = JSONObject().apply {
             put("model", modelName)
             put("messages", JSONArray().apply {
@@ -77,7 +79,7 @@ class CustomAiService(
                 })
                 put(JSONObject().apply {
                     put("role", "user")
-                    put("content", "用户文本输入内容：$textPrompt")
+                    put("content", userContent)
                 })
             })
             put("temperature", 0.1)

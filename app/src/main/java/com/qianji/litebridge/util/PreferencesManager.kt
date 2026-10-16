@@ -2,11 +2,35 @@ package com.qianji.litebridge.util
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 
 class PreferencesManager(context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+
+    var settingsVersion by mutableIntStateOf(0)
+        private set
+
+    fun notifySettingsChanged() {
+        settingsVersion++
+    }
+
+    fun getModeSummary(): String {
+        val asrName = if (asrProvider == "baidu") "百度语音极速" else "Gemini ASR"
+        val aiName = if (aiProvider == "custom") {
+            customAiModel.ifBlank { "DeepSeek" }
+        } else {
+            geminiModel.ifBlank { "Gemini" }
+        }
+        return if (aiProvider == "custom" || asrModeEnabled) {
+            "$asrName + $aiName (两阶段极速)"
+        } else {
+            "Gemini 原生多模态直传"
+        }
+    }
 
     var geminiApiKey: String
         get() = prefs.getString(KEY_GEMINI_API_KEY, "") ?: ""

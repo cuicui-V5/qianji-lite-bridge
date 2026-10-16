@@ -44,6 +44,7 @@ class RateLimitQueue(
 
         val count = atomicCount.incrementAndGet()
         _queueSize.value = count
+        com.qianji.litebridge.QianjiApp.instance.addRecognizedBill(bill)
         scope.launch {
             channel.send(bill)
         }
