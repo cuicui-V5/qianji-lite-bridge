@@ -36,12 +36,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -137,7 +139,21 @@ fun HoldToSpeakButton(
         label = "buttonBgColor"
     )
 
+    val currentRecordState by rememberUpdatedState(recordState)
+    val currentIsTapToStop by rememberUpdatedState(isTapToStopMode)
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                mediaRecorder?.stop()
+                mediaRecorder?.release()
+            } catch (_: Exception) {}
+            mediaRecorder = null
+        }
+    }
+
     fun startRecording() {
+        if (recordState != RecordState.IDLE) return
         if (!hasAudioPermission) {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             return
@@ -169,10 +185,12 @@ fun HoldToSpeakButton(
             mediaRecorder = recorder
             recordState = RecordState.RECORDING
 
-            val aiName = if (prefs.aiProvider == "custom") "自定义AI" else "Gemini"
+            val aiName = if (prefs.aiProvider == "custom") prefs.customAiModel.ifBlank { "自定义AI" } else "Gemini"
             val asrName = if (prefs.asrProvider == "baidu") "百度语音" else "Gemini转写"
             val modeDesc = if (prefs.aiProvider == "custom" || prefs.asrModeEnabled) "$asrName + $aiName" else "Gemini原生多模态"
-            onLog("🎙️ [$modeDesc] 开始录音，按住或点击记账...")
+            if (!isTapToStopMode) {
+                onLog("🎙️ [$modeDesc] 开始录音，按住说话...")
+            }
         } catch (e: Exception) {
             recordState = RecordState.IDLE
             isTapToStopMode = false
@@ -199,6 +217,7 @@ fun HoldToSpeakButton(
     }
 
     fun stopAndProcessRecording() {
+        if (recordState != RecordState.RECORDING) return
         val duration = System.currentTimeMillis() - pressStartTime
 
         try {
@@ -264,35 +283,37 @@ fun HoldToSpeakButton(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
-            .pointerInput(hasAudioPermission, isTapToStopMode, recordState) {
-                if (recordState == RecordState.PROCESSING) return@pointerInput
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
 
-                if (isTapToStopMode && recordState == RecordState.RECORDING) {
-                    // 点击模式：用户轻触即结束录音并触发解析
-                    awaitEachGesture {
-                        awaitFirstDown()
-                        waitForUpOrCancellation()
+                    if (currentRecordState == RecordState.PROCESSING) {
+                        return@awaitEachGesture
+                    }
+
+                    if (currentIsTapToStop && currentRecordState == RecordState.RECORDING) {
+                        // 桌面快捷方式一键直达模式：点击即可结束并开始记账
                         isTapToStopMode = false
                         stopAndProcessRecording()
-                    }
-                } else {
-                    // 常规长按模式
-                    awaitEachGesture {
-                        awaitFirstDown()
-                        startRecording()
+                        waitForUpOrCancellation()
+                    } else {
+                        // 主界面常规模式：长按说话，松开结束
+                        if (currentRecordState == RecordState.IDLE) {
+                            startRecording()
 
-                        val upOrCancel = waitForUpOrCancellation()
-                        if (upOrCancel != null) {
-                            stopAndProcessRecording()
-                        } else {
-                            try {
-                                mediaRecorder?.stop()
-                                mediaRecorder?.release()
-                            } catch (_: Exception) {}
-                            mediaRecorder = null
-                            currentRecordFile?.delete()
-                            recordState = RecordState.IDLE
-                            onLog("⚠️ 录音手势已取消")
+                            val upOrCancel = waitForUpOrCancellation()
+                            if (upOrCancel != null) {
+                                stopAndProcessRecording()
+                            } else {
+                                try {
+                                    mediaRecorder?.stop()
+                                    mediaRecorder?.release()
+                                } catch (_: Exception) {}
+                                mediaRecorder = null
+                                currentRecordFile?.delete()
+                                recordState = RecordState.IDLE
+                                onLog("⚠️ 录音手势已取消")
+                            }
                         }
                     }
                 }
