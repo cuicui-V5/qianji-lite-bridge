@@ -12,7 +12,6 @@ import android.speech.RecognitionListener
 import android.speech.RecognitionService
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import java.util.Locale
 
 /**
  * 手机系统原生语音识别封装 (SpeechRecognizer)
@@ -38,6 +37,7 @@ class SystemSpeechRecognizer(private val context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isListening = false
     private var recognizedTextBuffer = ""
+    private var currentEngineId: String? = null
 
     companion object {
         val GOOGLE_COMPONENT = ComponentName(
@@ -83,7 +83,7 @@ class SystemSpeechRecognizer(private val context: Context) {
         engines.add(
             AsrEngineItem(
                 id = "auto",
-                displayName = "自动优选 (三星离线语音优先)",
+                displayName = "自动优选 (三星离线语言包优先)",
                 componentName = null,
                 isInstalled = true,
                 description = "优先匹配系统已下载的三星官方离线语言包，零延迟极速识别"
@@ -239,6 +239,22 @@ class SystemSpeechRecognizer(private val context: Context) {
         return diagnose().isAvailable
     }
 
+    /**
+     * 内部同步安全清理旧的识别器，先脱钩监听器避免误报 ERROR_CLIENT
+     */
+    private fun internalCleanUp() {
+        isListening = false
+        val current = speechRecognizer
+        speechRecognizer = null
+        if (current != null) {
+            try {
+                current.setRecognitionListener(null) // 必须先置空，防止 cancel/destroy 时触发 onError 回调
+                current.cancel()
+                current.destroy()
+            } catch (_: Exception) {}
+        }
+    }
+
     fun startListening(
         preferredChoice: String = "auto",
         onPartial: (String) -> Unit = {},
@@ -247,37 +263,49 @@ class SystemSpeechRecognizer(private val context: Context) {
     ) {
         mainHandler.post {
             try {
-                cancel()
-                destroy()
-
-                recognizedTextBuffer = ""
-
                 val engines = getAvailableEngines()
                 val targetEngine = resolveActiveEngine(preferredChoice, engines)
                 val targetComp = targetEngine.componentName
 
-                val recognizer = when (targetEngine.id) {
-                    "samsung_ondevice" -> {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            try {
-                                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-                            } catch (_: Exception) {
+                // 若引擎切换或尚未创建，才进行重建；避免在短时间内重复创建销毁导致 ERROR_CLIENT
+                if (speechRecognizer == null || currentEngineId != targetEngine.id) {
+                    internalCleanUp()
+
+                    val recognizer = when (targetEngine.id) {
+                        "samsung_ondevice" -> {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                try {
+                                    SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                                } catch (_: Exception) {
+                                    SpeechRecognizer.createSpeechRecognizer(context)
+                                }
+                            } else {
                                 SpeechRecognizer.createSpeechRecognizer(context)
                             }
-                        } else {
-                            SpeechRecognizer.createSpeechRecognizer(context)
+                        }
+                        else -> {
+                            if (targetComp != null) {
+                                SpeechRecognizer.createSpeechRecognizer(context, targetComp)
+                            } else {
+                                SpeechRecognizer.createSpeechRecognizer(context)
+                            }
                         }
                     }
-                    else -> {
-                        if (targetComp != null) {
-                            SpeechRecognizer.createSpeechRecognizer(context, targetComp)
-                        } else {
-                            SpeechRecognizer.createSpeechRecognizer(context)
-                        }
-                    }
+                    speechRecognizer = recognizer
+                    currentEngineId = targetEngine.id
+                } else {
+                    // 同一引擎重用时，仅先取消上一轮的监听
+                    try {
+                        speechRecognizer?.cancel()
+                    } catch (_: Exception) {}
                 }
 
-                speechRecognizer = recognizer
+                val recognizer = speechRecognizer ?: run {
+                    onError("无法创建语音识别器")
+                    return@post
+                }
+
+                recognizedTextBuffer = ""
 
                 recognizer.setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {}
@@ -288,15 +316,16 @@ class SystemSpeechRecognizer(private val context: Context) {
 
                     override fun onError(error: Int) {
                         isListening = false
+                        // 准确对应 Android 官方 SDK 错误常量（注意：10 是 TOO_MANY_REQUESTS，12 是 LANGUAGE_NOT_SUPPORTED）
                         val errorMsg = when (error) {
-                            SpeechRecognizer.ERROR_AUDIO -> "音频录制错误 (ERROR_AUDIO)"
+                            SpeechRecognizer.ERROR_AUDIO -> "麦克风音频异常 (ERROR_AUDIO)"
                             SpeechRecognizer.ERROR_CLIENT -> {
                                 if (targetEngine.id == "google") {
-                                    "Google 语音异常 (ERROR_CLIENT)。国内网络无法直连 Google，建议在设置中切换为「三星本地端侧语音」！"
+                                    "Google 语音异常 (ERROR_CLIENT)。国内网络可能无法连接 Google，建议切换为「三星本地端侧语音」！"
                                 } else if (targetEngine.displayName.contains("Home Assistant")) {
-                                    "Home Assistant 异常 (ERROR_CLIENT)。未连接到局域网 HA 语音流水线，请在设置中切换为「三星本地端侧语音」"
+                                    "Home Assistant 异常 (ERROR_CLIENT)。未连接到 HA 语音流水线，请切换为「三星本地端侧语音」"
                                 } else {
-                                    "客户端调用异常 (ERROR_CLIENT)"
+                                    "语音客户端异常 (ERROR_CLIENT)"
                                 }
                             }
                             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "无麦克风录音权限"
@@ -306,10 +335,11 @@ class SystemSpeechRecognizer(private val context: Context) {
                             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "语音识别引擎正忙 (ERROR_RECOGNIZER_BUSY)"
                             SpeechRecognizer.ERROR_SERVER -> "服务端识别错误 (ERROR_SERVER)"
                             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "等待说话超时 (ERROR_SPEECH_TIMEOUT)"
-                            10 -> "当前语言未支持 (ERROR_LANGUAGE_NOT_SUPPORTED)。Google 未下载离线包，请在设置中切换为已安装好的「三星本地端侧语音」！"
-                            11 -> "语言模型包未就绪 (ERROR_LANGUAGE_UNAVAILABLE)"
-                            12 -> "语音引擎断开连接 (ERROR_SERVER_DISCONNECTED)"
-                            13 -> "调用频次受限 (ERROR_TOO_MANY_REQUESTS)"
+                            10 -> "调用频次过快 (ERROR_TOO_MANY_REQUESTS)，请稍候重试"
+                            11 -> "语音服务断开连接 (ERROR_SERVER_DISCONNECTED)"
+                            12 -> "当前语言未支持 (ERROR_LANGUAGE_NOT_SUPPORTED)"
+                            13 -> "语言模型包未就绪 (ERROR_LANGUAGE_UNAVAILABLE)"
+                            14 -> "无法检查引擎支持 (ERROR_CANNOT_CHECK_SUPPORT)"
                             else -> "语音异常 (错误码: $error)"
                         }
 
@@ -346,12 +376,8 @@ class SystemSpeechRecognizer(private val context: Context) {
 
                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    
-                    // 传入全套中文语言标识以确保各家引擎兼容
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "zh-CN")
-                    putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "zh-CN")
-                    putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("zh-CN", "zh_CN", "cmn-Hans-CN", "zh"))
                     
                     if (targetEngine.id == "samsung_ondevice" || targetEngine.id == "auto") {
                         putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
@@ -373,6 +399,7 @@ class SystemSpeechRecognizer(private val context: Context) {
     fun stopListening() {
         mainHandler.post {
             if (isListening) {
+                isListening = false
                 try {
                     speechRecognizer?.stopListening()
                 } catch (_: Exception) {}
@@ -391,11 +418,7 @@ class SystemSpeechRecognizer(private val context: Context) {
 
     fun destroy() {
         mainHandler.post {
-            isListening = false
-            try {
-                speechRecognizer?.destroy()
-            } catch (_: Exception) {}
-            speechRecognizer = null
+            internalCleanUp()
         }
     }
 }
