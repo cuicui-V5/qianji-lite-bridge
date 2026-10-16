@@ -35,16 +35,28 @@ class GeminiService(
 ) {
     private val gson = Gson()
 
+    @Volatile
+    private var cachedClient: Client? = null
+    @Volatile
+    private var cachedApiKey: String? = null
+
     /**
-     * 构建或获取官方 Client
+     * 构建或获取官方 Client (复用底层连接池与 TLS 会话，避免重复握手)
      */
+    @Synchronized
     private fun getClient(): Client {
         val apiKey = prefs.geminiApiKey.trim()
+        if (cachedClient != null && cachedApiKey == apiKey) {
+            return cachedClient!!
+        }
         val builder = Client.builder()
         if (apiKey.isNotEmpty()) {
             builder.apiKey(apiKey)
         }
-        return builder.build()
+        val newClient = builder.build()
+        cachedClient = newClient
+        cachedApiKey = apiKey
+        return newClient
     }
 
     /**
@@ -100,6 +112,7 @@ class GeminiService(
             doOutput = true
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("x-goog-api-key", apiKey)
+            setRequestProperty("Connection", "Keep-Alive")
         }
 
         val responseCode = try {
@@ -201,13 +214,16 @@ class GeminiService(
 
             val configBuilder = GenerateContentConfig.builder()
                 .temperature(0.1f)
+                .responseMimeType("application/json")
 
-            if (thinkingBudget >= 0) {
-                configBuilder.thinkingConfig(
-                    ThinkingConfig.builder()
-                        .thinkingBudget(thinkingBudget)
-                        .build()
-                )
+            if (thinkingBudget > 0) {
+                try {
+                    configBuilder.thinkingConfig(
+                        ThinkingConfig.builder()
+                            .thinkingBudget(thinkingBudget)
+                            .build()
+                    )
+                } catch (_: Exception) {}
             }
 
             val response = client.models.generateContent(modelName, listOf(content), configBuilder.build())
@@ -217,6 +233,7 @@ class GeminiService(
             }
         } catch (e: Exception) {
             lastError = e
+            onProgress("⚠️ [AI 解析策略 1 异常] ${e.message}，正在尝试备用策略...")
             try {
                 val partAudio = Part.fromBytes(audioBytes, "audio/mp4")
                 val partPrompt = Part.fromText(promptText)
@@ -317,13 +334,16 @@ class GeminiService(
 
             val configBuilder = GenerateContentConfig.builder()
                 .temperature(0.1f)
+                .responseMimeType("application/json")
 
-            if (thinkingBudget >= 0) {
-                configBuilder.thinkingConfig(
-                    ThinkingConfig.builder()
-                        .thinkingBudget(thinkingBudget)
-                        .build()
-                )
+            if (thinkingBudget > 0) {
+                try {
+                    configBuilder.thinkingConfig(
+                        ThinkingConfig.builder()
+                            .thinkingBudget(thinkingBudget)
+                            .build()
+                    )
+                } catch (_: Exception) {}
             }
 
             val response = client.models.generateContent(modelName, listOf(content), configBuilder.build())
@@ -333,6 +353,7 @@ class GeminiService(
             }
         } catch (e: Exception) {
             lastError = e
+            onProgress("⚠️ [AI 解析策略 1 异常] ${e.message}，正在尝试备用策略...")
             try {
                 val partPrompt = Part.fromText(fullPrompt)
                 val content = TypesContent.fromParts(partPrompt)
