@@ -358,7 +358,8 @@ class FloatingCapsuleService : Service() {
             wakeLock?.acquire(60_000) // 最长持有 60 秒唤醒锁，防止锁屏或休眠切断麦克风
         } catch (_: Exception) {}
 
-        val diag = speechRecognizer?.diagnose()
+        val choice = app.prefs.asrEngineChoice
+        val diag = speechRecognizer?.diagnose(choice)
         val useAsr = app.prefs.asrModeEnabled && (diag?.isAvailable == true)
 
         if (app.prefs.asrModeEnabled && diag?.isAvailable != true) {
@@ -367,10 +368,11 @@ class FloatingCapsuleService : Service() {
         }
 
         if (useAsr) {
-            app.addLog("🎙️ [悬浮胶囊] 启动引擎: ${diag?.summaryText ?: "系统语音"}，按住说话...")
+            app.addLog("🎙️ [悬浮胶囊] 启动引擎: ${diag?.activeEngineName ?: "系统语音"}，按住说话...")
             updateCapsuleStyle(CapsuleState.RECORDING, "🔴", "倾听中...")
 
             speechRecognizer?.startListening(
+                preferredChoice = choice,
                 onPartial = { partial ->
                     val preview = if (partial.length > 6) "..." + partial.takeLast(5) else partial
                     updateCapsuleStyle(CapsuleState.RECORDING, "🔴", preview)

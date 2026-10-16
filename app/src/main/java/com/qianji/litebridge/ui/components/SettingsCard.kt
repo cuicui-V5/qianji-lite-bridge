@@ -30,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -69,6 +70,7 @@ fun SettingsCard(
     var thinkingBudgetText by remember { mutableStateOf(prefs.thinkingBudget.toString()) }
     var autoReturn by remember { mutableStateOf(prefs.autoReturn) }
     var asrModeEnabled by remember { mutableStateOf(prefs.asrModeEnabled) }
+    var asrEngineChoice by remember { mutableStateOf(prefs.asrEngineChoice) }
 
     var isApiKeyVisible by remember { mutableStateOf(false) }
     var showAutoSavedHint by remember { mutableStateOf(false) }
@@ -84,6 +86,7 @@ fun SettingsCard(
         prefs.thinkingBudget = budget
         prefs.autoReturn = autoReturn
         prefs.asrModeEnabled = asrModeEnabled
+        prefs.asrEngineChoice = asrEngineChoice
         showAutoSavedHint = true
         if (showToast) {
             Toast.makeText(context, "配置已成功保存", Toast.LENGTH_SHORT).show()
@@ -216,7 +219,7 @@ fun SettingsCard(
 
                     // 语音输入与解析模式切换 (系统ASR转文字 vs 原生多模态直接上传)
                     val speechRecognizer = remember { SystemSpeechRecognizer(context) }
-                    val diag = remember { speechRecognizer.diagnose() }
+                    val diag = speechRecognizer.diagnose(asrEngineChoice)
 
                     Column(
                         modifier = Modifier
@@ -232,7 +235,7 @@ fun SettingsCard(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (asrModeEnabled) "语音模式：系统语音转文字 (推荐·极速)" else "语音模式：原生多模态直接上传",
+                                    text = if (asrModeEnabled) "语音模式：系统语音转文字 (推荐·秒级)" else "语音模式：原生多模态直接上传",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp,
                                     color = if (asrModeEnabled) SuccessGreen else MaterialTheme.colorScheme.primary
@@ -259,16 +262,73 @@ fun SettingsCard(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = if (diag.isAvailable)
-                                "🔍 识别引擎状态：${diag.summaryText}"
-                            else
-                                "⚠️ 未检测到系统 RecognitionService 引擎 (国行三星请检查: 设置->常规管理->键盘列表和默认键盘->语音输入)",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (diag.isAvailable) SuccessGreen else DangerRed
-                        )
+                        if (asrModeEnabled) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "🎯 当前生效引擎：${diag.activeEngineName}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (diag.isAvailable) SuccessGreen else DangerRed
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "选择语音识别引擎通道：",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            diag.allEngines.forEach { engine ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable {
+                                            asrEngineChoice = engine.id
+                                            prefs.asrEngineChoice = engine.id
+                                            saveAll(showToast = false)
+                                        }
+                                        .padding(vertical = 4.dp, horizontal = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = asrEngineChoice == engine.id,
+                                        onClick = {
+                                            asrEngineChoice = engine.id
+                                            prefs.asrEngineChoice = engine.id
+                                            saveAll(showToast = false)
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = engine.displayName + if (!engine.isInstalled) " (未检测到)" else "",
+                                            fontSize = 12.sp,
+                                            fontWeight = if (asrEngineChoice == engine.id) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (engine.isInstalled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                        if (engine.description.isNotBlank()) {
+                                            Text(
+                                                text = engine.description,
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "💡 说明：若 Google 报错 ERROR_CLIENT，通常是因为国内网络无法直连 Google 语音服务器；直接在此切换为「三星 Bixby 语音识别」即可完美使用！",
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))

@@ -182,7 +182,7 @@ fun HoldToSpeakButton(
         pressStartTime = System.currentTimeMillis()
         liveSpeechText = ""
 
-        val diag = speechRecognizer.diagnose()
+        val diag = speechRecognizer.diagnose(prefs.asrEngineChoice)
         val useAsr = prefs.asrModeEnabled && diag.isAvailable
 
         if (prefs.asrModeEnabled && !diag.isAvailable) {
@@ -192,8 +192,9 @@ fun HoldToSpeakButton(
 
         if (useAsr) {
             recordState = RecordState.RECORDING
-            onLog("🎙️ [系统语音识别] 启动引擎: ${diag.summaryText}，按住说话...")
+            onLog("🎙️ [系统语音识别] 启动引擎: ${diag.activeEngineName}，按住说话...")
             speechRecognizer.startListening(
+                preferredChoice = prefs.asrEngineChoice,
                 onPartial = { partial ->
                     liveSpeechText = partial
                 },
@@ -377,10 +378,10 @@ fun HoldToSpeakButton(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        val diag = remember { speechRecognizer.diagnose() }
+                        val diag = speechRecognizer.diagnose(prefs.asrEngineChoice)
                         Text(
                             text = if (prefs.asrModeEnabled) {
-                                if (diag.isAvailable) "系统极速识别 · 秒级响应" else "未检测到引擎 · 将自动切多模态"
+                                if (diag.isAvailable) "${diag.activeEngineName} · 秒级响应" else "未检测到引擎 · 将自动切多模态"
                             } else {
                                 "原生多模态直传 · 音频多模态"
                             },
